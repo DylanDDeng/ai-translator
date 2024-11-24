@@ -47,7 +47,12 @@ interface GeminiAPIResponse {
 async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   const claude = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY || '',
+    maxRetries: 0, // 禁用自动重试
   });
+
+  // 创建一个带超时的 AbortController
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
   try {
     let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
@@ -57,7 +62,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
     }
 
     const response = await claude.messages.create({
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-3-sonnet-20240229",
       max_tokens: 4096,
       messages: [
         {
@@ -66,10 +71,15 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
         }
       ],
       system: systemPrompt,
+    }, {
+      signal: controller.signal,
+      timeout: 30000 // 30秒超时
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.content || response.content.length === 0) {
-      throw new Error('No translation result');
+      throw new Error('Empty response from Claude API');
     }
 
     // Extract text from the response content
@@ -82,10 +92,24 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       })
       .join('');
 
+    if (!translatedText.trim()) {
+      throw new Error('Empty translation result');
+    }
+
     return translatedText;
   } catch (error) {
-    console.error('Claude API Error:', error);
-    throw new Error('Translation failed');
+    clearTimeout(timeoutId);
+    
+    if (error instanceof Error) {
+      if (error.name === 'AbortError' || error.message.includes('timeout')) {
+        throw new Error('Translation request timed out after 30 seconds');
+      }
+      if (error.message.includes('status code')) {
+        throw new Error(`Claude API error: ${error.message}`);
+      }
+    }
+    
+    throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
@@ -216,28 +240,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 设置超时
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(new Error('Translation request timed out after 50 seconds'));
-      }, 50000); // 50 秒超时
-    });
+    // 检查文本长度
+    if (text.length > 5000) {
+      return NextResponse.json(
+        { error: 'Text is too long. Please limit to 5000 characters.' },
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
 
     let translatedText: string;
     try {
-      const translationPromise = (async () => {
-        if (model === 'qwen2.5-72b-Instruct-128k') {
-          return await translateWithQwen(text, targetLang, systemPrompt, context);
-        } else if (model === 'gemini-1.5-pro-002') {
-          return await translateWithGemini(text, targetLang, systemPrompt);
-        } else {
-          return await translateWithClaude(text, targetLang, systemPrompt, context);
-        }
-      })();
+      if (model === 'qwen2.5-72b-Instruct-128k') {
+        translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
+      } else if (model === 'gemini-1.5-pro-002') {
+        translatedText = await translateWithGemini(text, targetLang, systemPrompt);
+      } else {
+        translatedText = await translateWithClaude(text, targetLang, systemPrompt, context);
+      }
 
-      translatedText = await Promise.race([translationPromise, timeoutPromise]) as string;
+      return NextResponse.json(
+        { translatedText },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
     } catch (error) {
-      if (error instanceof Error && error.message.includes('timed out')) {
+      if (error instanceof Error && (error.message.includes('timed out') || error.name === 'AbortError')) {
         return NextResponse.json(
           { error: 'Translation request timed out. Please try with a shorter text or try again later.' },
           { 
@@ -250,15 +285,6 @@ export async function POST(request: NextRequest) {
       }
       throw error;
     }
-
-    return NextResponse.json(
-      { translatedText },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
   } catch (error) {
     console.error('Translation error:', error);
     return NextResponse.json(
