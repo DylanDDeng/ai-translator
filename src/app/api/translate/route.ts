@@ -26,6 +26,14 @@ interface TranslationRequest {
   } | null;
 }
 
+interface QwenAPIResponse {
+  choices: {
+    message: {
+      content: string;
+    };
+  }[];
+}
+
 async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   const claude = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -71,7 +79,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
   }
 }
 
-async function translateWithQwen(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null) {
+async function translateWithQwen(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   try {
     let prompt = `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`;
     
@@ -110,7 +118,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       throw new Error('Qwen API request failed');
     }
 
-    const data = await response.json();
+    const data = await response.json() as QwenAPIResponse;
     return data.choices[0].message.content;
   } catch (error) {
     console.error('Qwen API Error:', error);
