@@ -27,11 +27,17 @@ interface TranslationRequest {
 }
 
 interface QwenAPIResponse {
-  choices: {
+  choices: Array<{
     message: {
       content: string;
+      role: string;
     };
-  }[];
+    finish_reason: string;
+  }>;
+  created: number;
+  id: string;
+  model: string;
+  object: string;
 }
 
 interface GeminiAPIResponse {
@@ -168,13 +174,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       throw new Error(`Qwen API request failed: ${response.status} - ${errorText}`);
     }
 
-    let data: QwenAPIResponse;
-    try {
-      data = await response.json();
-    } catch (jsonError) {
-      console.error('Failed to parse Qwen API response:', jsonError);
-      throw new Error('Invalid JSON response from Qwen API');
-    }
+    const data = await response.json() as QwenAPIResponse;
     
     if (!data.choices?.[0]?.message?.content) {
       console.error('Invalid Qwen API Response:', data);
