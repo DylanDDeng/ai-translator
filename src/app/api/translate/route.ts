@@ -216,14 +216,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let translatedText: string;
+    // 设置超时
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Translation request timed out after 50 seconds'));
+      }, 50000); // 50 秒超时
+    });
 
-    if (model === 'qwen2.5-72b-Instruct-128k') {
-      translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
-    } else if (model === 'gemini-1.5-pro-002') {
-      translatedText = await translateWithGemini(text, targetLang, systemPrompt);
-    } else {
-      translatedText = await translateWithClaude(text, targetLang, systemPrompt, context);
+    let translatedText: string;
+    try {
+      const translationPromise = (async () => {
+        if (model === 'qwen2.5-72b-Instruct-128k') {
+          return await translateWithQwen(text, targetLang, systemPrompt, context);
+        } else if (model === 'gemini-1.5-pro-002') {
+          return await translateWithGemini(text, targetLang, systemPrompt);
+        } else {
+          return await translateWithClaude(text, targetLang, systemPrompt, context);
+        }
+      })();
+
+      translatedText = await Promise.race([translationPromise, timeoutPromise]) as string;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('timed out')) {
+        return NextResponse.json(
+          { error: 'Translation request timed out. Please try with a shorter text or try again later.' },
+          { 
+            status: 504,
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+      }
+      throw error;
     }
 
     return NextResponse.json(
