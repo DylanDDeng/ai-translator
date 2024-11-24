@@ -15,7 +15,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [targetLang, setTargetLang] = useState('zh');
-  const [selectedModel, setSelectedModel] = useState('claude-3-5-sonnet-20241022');
+  const [selectedModel, setSelectedModel] = useState('claude-3-sonnet-20240229');
   const [systemPrompt, setSystemPrompt] = useState(`You are a professional translator specialized in accurate and natural translation.
 Follow these translation principles:
 1. Maintain the original meaning and context
@@ -39,19 +39,19 @@ Follow these translation principles:
 
   const models = [
     { 
-      id: 'claude-3-5-sonnet-20241022',
-      name: 'Claude-3.5-Sonnet-20241022',
-      description: 'Anthropic的Claude-3.5-Sonnet模型，擅长多语言翻译'
+      id: 'claude-3-sonnet-20240229',
+      name: 'Claude 3 Sonnet',
+      description: 'Anthropic的Claude 3 Sonnet模型，擅长多语言翻译'
     },
     { 
-      id: 'qwen2.5-72b-Instruct-128k',
-      name: 'Qwen2.5-72B-Instruct-128K',
+      id: 'qwen',
+      name: 'Qwen2.5-72B',
       description: '通义千问72B大模型，支持多语言翻译'
     },
     {
-      id: 'gemini-1.5-pro-002',
-      name: 'Gemini-1.5-Pr-002',
-      description: 'Google的Gemini-1.5-Pro-002模型，支持多语言翻译'
+      id: 'gemini',
+      name: 'Gemini 1.5 Pro',
+      description: 'Google的Gemini 1.5 Pro模型，支持多语言翻译'
     }
   ];
 
@@ -152,11 +152,7 @@ Follow these translation principles:
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
-            
-            if (data === '[DONE]') {
-              // 翻译完成，不需要特殊处理，因为最终文本已经在前面的数据中
-              break;
-            }
+            if (!data) continue;
             
             try {
               const parsedData = JSON.parse(data);
@@ -166,23 +162,16 @@ Follow these translation principles:
               }
               
               if (parsedData.text) {
-                // 更新部分翻译
                 setChunks(prev => prev.map((chunk, idx) => 
                   idx === chunkIndex ? {
                     ...chunk,
                     partialTranslation: parsedData.text,
-                    // 如果收到 done 标记，将部分翻译移动到最终翻译
-                    ...(parsedData.done ? {
-                      translatedText: parsedData.text,
-                      partialTranslation: '',
-                      isTranslating: false
-                    } : {})
+                    translatedText: parsedData.text
                   } : chunk
                 ));
               }
             } catch (err) {
               console.error('Error parsing stream data:', err);
-              // 继续处理下一行，不中断流
             }
           }
         }
