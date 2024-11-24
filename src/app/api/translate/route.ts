@@ -205,7 +205,15 @@ export async function POST(request: NextRequest) {
     const { text, targetLang, systemPrompt, model, context }: TranslationRequest = await request.json();
 
     if (!text || !targetLang) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { 
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
     }
 
     let translatedText: string;
@@ -218,12 +226,24 @@ export async function POST(request: NextRequest) {
       translatedText = await translateWithClaude(text, targetLang, systemPrompt, context);
     }
 
-    return NextResponse.json({ translatedText });
+    return NextResponse.json(
+      { translatedText },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
   } catch (error) {
     console.error('Translation error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Translation failed' },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
     );
   }
 }

@@ -129,7 +129,15 @@ Follow these translation principles:
         }),
       });
 
-      const data = await response.json();
+      let data;
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        // 如果响应不是 JSON 格式，直接读取文本
+        const text = await response.text();
+        data = { error: text };
+      }
       
       if (!response.ok) {
         throw new Error(data.error || 'Translation failed');
@@ -144,6 +152,7 @@ Follow these translation principles:
       ));
 
     } catch (err) {
+      console.error('Translation error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
       setChunks(prev => prev.map((chunk, idx) => 
         idx === chunkIndex ? { ...chunk, isTranslating: false } : chunk
