@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
     // 开始异步翻译过程
     (async () => {
       try {
-        if (model === 'claude-3-sonnet-20240229') {
+        if (model === 'claude-3-5-sonnet-20241022') {
           let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
           if (context) {
             prompt = `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
@@ -352,15 +352,22 @@ export async function POST(request: NextRequest) {
 
           // 监听完成
           messageStream.on('end', async () => {
+            if (accumulatedText) {
+              await writer.write(
+                encoder.encode(`data: ${JSON.stringify({ text: accumulatedText, done: true })}\n\n`)
+              );
+            }
+            await writer.write(encoder.encode('data: [DONE]\n\n'));
             await writer.close();
           });
 
-        } else if (model === 'qwen') {
+        } else if (model === 'qwen2.5-72b-Instruct-128k') {
           try {
             const translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
             await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ text: translatedText })}\n\n`)
+              encoder.encode(`data: ${JSON.stringify({ text: translatedText, done: true })}\n\n`)
             );
+            await writer.write(encoder.encode('data: [DONE]\n\n'));
           } catch (error) {
             console.error('Qwen translation error:', error);
             await writer.write(
@@ -369,12 +376,13 @@ export async function POST(request: NextRequest) {
           } finally {
             await writer.close();
           }
-        } else if (model === 'gemini') {
+        } else if (model === 'gemini-1.5-pro-002') {
           try {
             const translatedText = await translateWithGemini(text, targetLang, systemPrompt);
             await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ text: translatedText })}\n\n`)
+              encoder.encode(`data: ${JSON.stringify({ text: translatedText, done: true })}\n\n`)
             );
+            await writer.write(encoder.encode('data: [DONE]\n\n'));
           } catch (error) {
             console.error('Gemini translation error:', error);
             await writer.write(
