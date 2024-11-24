@@ -45,7 +45,7 @@ interface GeminiAPIResponse {
 }
 
 // 设置统一的超时时间常量
-const API_TIMEOUT = 120000; // 120 秒，给网络延迟和处理时间留出余地
+const API_TIMEOUT = 270000; // 270 秒，给网络延迟和处理时间留出 30 秒的缓冲
 
 async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   const claude = new Anthropic({
@@ -105,7 +105,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
     
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        throw new Error('Translation request timed out after 120 seconds');
+        throw new Error('Translation request timed out after 270 seconds');
       }
       if (error.message.includes('status code')) {
         throw new Error(`Claude API error: ${error.message}`);
@@ -194,7 +194,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
     
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        throw new Error('Translation request timed out after 120 seconds');
+        throw new Error('Translation request timed out after 270 seconds');
       }
       if (error.message.includes('fetch failed')) {
         throw new Error('Network error: Unable to connect to Qwen API');
@@ -293,7 +293,7 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
     
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        throw new Error('Translation request timed out after 120 seconds');
+        throw new Error('Translation request timed out after 270 seconds');
       }
       if (error.message.includes('fetch failed')) {
         throw new Error('Network error: Unable to connect to Gemini API');
