@@ -27,17 +27,11 @@ interface TranslationRequest {
 }
 
 interface QwenAPIResponse {
-  choices: Array<{
+  choices: {
     message: {
       content: string;
-      role: string;
     };
-    finish_reason: string;
-  }>;
-  created: number;
-  id: string;
-  model: string;
-  object: string;
+  }[];
 }
 
 interface GeminiAPIResponse {
@@ -82,6 +76,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       system: systemPrompt,
     }, {
       signal: controller.signal,
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -159,7 +154,8 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
         }
       }),
       signal: controller.signal,
-      agent: proxyAgent
+      agent: proxyAgent, // 添加代理支持
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -174,7 +170,13 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       throw new Error(`Qwen API request failed: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json() as QwenAPIResponse;
+    let data: QwenAPIResponse;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      console.error('Failed to parse Qwen API response:', jsonError);
+      throw new Error('Invalid JSON response from Qwen API');
+    }
     
     if (!data.choices?.[0]?.message?.content) {
       console.error('Invalid Qwen API Response:', data);
@@ -197,6 +199,12 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       if (error.message.includes('fetch failed')) {
         throw new Error('Network error: Unable to connect to Qwen API');
       }
+      // 更详细的错误日志
+      console.error('Qwen translation error:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
     }
     
     throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -251,7 +259,8 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
         ]
       }),
       signal: controller.signal,
-      agent: proxyAgent
+      agent: proxyAgent,
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -315,29 +324,21 @@ export async function POST(request: NextRequest) {
     // 开始异步翻译过程
     (async () => {
       try {
-        if (model === 'claude-3-5-sonnet-20241022') {
-          let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
-          if (context) {
-            prompt = `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
-          }
-
+        if (model === 'claude') {
           const messageStream = await anthropic.messages.stream({
             messages: [{
               role: 'user',
-              content: prompt
+              content: `Translate the following text to ${targetLang}:\n\n${text}`
             }],
             model: 'claude-3-sonnet-20240229',
             max_tokens: 4096,
             system: systemPrompt,
           });
 
-          let accumulatedText = '';
-
           // 监听文本输出
           messageStream.on('text', async (text) => {
-            accumulatedText += text;
             await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ text: accumulatedText })}\n\n`)
+              encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
             );
           });
 
@@ -352,49 +353,24 @@ export async function POST(request: NextRequest) {
 
           // 监听完成
           messageStream.on('end', async () => {
-            if (accumulatedText) {
-              await writer.write(
-                encoder.encode(`data: ${JSON.stringify({ text: accumulatedText, done: true })}\n\n`)
-              );
-            }
             await writer.write(encoder.encode('data: [DONE]\n\n'));
             await writer.close();
           });
-
-        } else if (model === 'qwen2.5-72b-Instruct-128k') {
-          try {
-            const translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
-            await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ text: translatedText, done: true })}\n\n`)
-            );
-            await writer.write(encoder.encode('data: [DONE]\n\n'));
-          } catch (error) {
-            console.error('Qwen translation error:', error);
-            await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' })}\n\n`)
-            );
-          } finally {
-            await writer.close();
-          }
-        } else if (model === 'gemini-1.5-pro-002') {
-          try {
-            const translatedText = await translateWithGemini(text, targetLang, systemPrompt);
-            await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ text: translatedText, done: true })}\n\n`)
-            );
-            await writer.write(encoder.encode('data: [DONE]\n\n'));
-          } catch (error) {
-            console.error('Gemini translation error:', error);
-            await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' })}\n\n`)
-            );
-          } finally {
-            await writer.close();
-          }
         } else {
-          await writer.write(
-            encoder.encode(`data: ${JSON.stringify({ error: 'Invalid model selection' })}\n\n`)
-          );
+          // 处理其他模型的翻译...
+          let translatedText: string;
+          if (model === 'qwen2.5-72b-Instruct-128k') {
+            translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
+          } else if (model === 'gemini-1.5-pro-002') {
+            translatedText = await translateWithGemini(text, targetLang, systemPrompt);
+          }
+          
+          if (translatedText) {
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ text: translatedText })}\n\n`)
+            );
+          }
+          await writer.write(encoder.encode('data: [DONE]\n\n'));
           await writer.close();
         }
       } catch (error) {
@@ -406,17 +382,19 @@ export async function POST(request: NextRequest) {
       }
     })();
 
-    return new NextResponse(stream.readable, {
+    // 返回流式响应
+    return new Response(stream.readable, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
       },
     });
+
   } catch (error) {
     console.error('Request processing error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to process request' },
       { status: 500 }
     );
   }
