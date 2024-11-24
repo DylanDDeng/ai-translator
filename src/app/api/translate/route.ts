@@ -76,7 +76,6 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       system: systemPrompt,
     }, {
       signal: controller.signal,
-      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -119,7 +118,9 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
 async function translateWithQwen(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, API_TIMEOUT);
 
   try {
     let prompt = `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`;
@@ -155,7 +156,6 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       }),
       signal: controller.signal,
       agent: proxyAgent, // 添加代理支持
-      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -214,7 +214,9 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
 async function translateWithGemini(text: string, targetLang: string, systemPrompt: string): Promise<string> {
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, API_TIMEOUT);
 
   try {
     const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent', {
@@ -260,7 +262,6 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
       }),
       signal: controller.signal,
       agent: proxyAgent,
-      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
