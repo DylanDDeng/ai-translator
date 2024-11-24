@@ -4,7 +4,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import fetch from 'node-fetch';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const QWEN_API_KEY = 'sk-xlndenigzaoyatyrfqrdspdzqvymzlfwtdbmmbxqxgzeyyoa';
+const QWEN_API_KEY = process.env.QWEN_API_KEY || 'sk-xlndenigzaoyatyrfqrdspdzqvymzlfwtdbmmbxqxgzeyyoa';
 const GEMINI_API_KEY = 'AIzaSyCZ4FSL7P_bL2fL_F53fBcSskpJCydJbEM';
 const HTTPS_PROXY = process.env.HTTPS_PROXY;
 
@@ -125,14 +125,21 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
     });
 
     if (!response.ok) {
-      throw new Error('Qwen API request failed');
+      const errorText = await response.text();
+      console.error('Qwen API Error Response:', errorText);
+      throw new Error(`Qwen API request failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as QwenAPIResponse;
+    
+    if (!data.choices?.[0]?.message?.content) {
+      throw new Error('Invalid response format from Qwen API');
+    }
+    
     return data.choices[0].message.content;
   } catch (error) {
     console.error('Qwen API Error:', error);
-    throw new Error('Translation failed');
+    throw new Error('Qwen translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
