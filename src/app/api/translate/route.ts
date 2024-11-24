@@ -149,7 +149,8 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
           type: "text"
         }
       }),
-      signal: controller.signal
+      signal: controller.signal,
+      agent: proxyAgent, // 添加代理支持
     });
 
     clearTimeout(timeoutId);
@@ -164,7 +165,13 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       throw new Error(`Qwen API request failed: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json() as QwenAPIResponse;
+    let data: QwenAPIResponse;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      console.error('Failed to parse Qwen API response:', jsonError);
+      throw new Error('Invalid JSON response from Qwen API');
+    }
     
     if (!data.choices?.[0]?.message?.content) {
       console.error('Invalid Qwen API Response:', data);
@@ -187,6 +194,12 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       if (error.message.includes('fetch failed')) {
         throw new Error('Network error: Unable to connect to Qwen API');
       }
+      // 更详细的错误日志
+      console.error('Qwen translation error:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
     }
     
     throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
