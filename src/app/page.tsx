@@ -135,13 +135,12 @@ Follow these translation principles:
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Failed to get response reader');
+      if (!response.body) {
+        throw new Error('No response body');
       }
 
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let accumulatedTranslation = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -152,38 +151,52 @@ Follow these translation principles:
         
         for (const line of lines) {
           if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            
+            if (data === '[DONE]') {
+              // 翻译完成，不需要特殊处理，因为最终文本已经在前面的数据中
+              break;
+            }
+            
             try {
-              const data = JSON.parse(line.slice(6));
-              if (data.text) {
-                accumulatedTranslation += data.text;
+              const parsedData = JSON.parse(data);
+              
+              if (parsedData.error) {
+                throw new Error(parsedData.error);
+              }
+              
+              if (parsedData.text) {
                 // 更新部分翻译
                 setChunks(prev => prev.map((chunk, idx) => 
                   idx === chunkIndex ? {
                     ...chunk,
-                    partialTranslation: accumulatedTranslation
+                    partialTranslation: parsedData.text,
+                    // 如果收到 done 标记，将部分翻译移动到最终翻译
+                    ...(parsedData.done ? {
+                      translatedText: parsedData.text,
+                      partialTranslation: '',
+                      isTranslating: false
+                    } : {})
                   } : chunk
                 ));
-              } else if (data.error) {
-                throw new Error(data.error);
-              } else if (line.includes('[DONE]')) {
-                // 翻译完成，更新最终结果
-                setChunks(prev => prev.map((chunk, idx) => 
-                  idx === chunkIndex ? {
-                    ...chunk,
-                    translatedText: accumulatedTranslation,
-                    isTranslating: false,
-                    partialTranslation: ''
-                  } : chunk
-                ));
-                return;
               }
             } catch (err) {
               console.error('Error parsing stream data:', err);
-              throw new Error('Failed to parse translation stream');
+              // 继续处理下一行，不中断流
             }
           }
         }
       }
+
+      // 确保在流结束时更新状态
+      setChunks(prev => prev.map((chunk, idx) => 
+        idx === chunkIndex ? {
+          ...chunk,
+          translatedText: chunk.partialTranslation || chunk.translatedText,
+          partialTranslation: '',
+          isTranslating: false
+        } : chunk
+      ));
 
     } catch (err) {
       console.error('Translation error:', err);
@@ -370,9 +383,24 @@ Follow these translation principles:
                     Chunk {index + 1}
                   </h3>
                   {chunk.isTranslating && (
-                    <span className="text-xs text-indigo-600">
+                    <div className="flex items-center text-xs text-indigo-600">
+                      <svg className="animate-spin h-4 w-4 mr-1" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
                       Translating...
-                    </span>
+                    </div>
                   )}
                 </div>
 
@@ -384,7 +412,9 @@ Follow these translation principles:
                   </div>
 
                   {(chunk.translatedText || chunk.partialTranslation) && (
-                    <div className="p-4 bg-white/50 rounded-lg border border-slate-200 backdrop-blur-sm">
+                    <div className={`p-4 bg-white/50 rounded-lg border backdrop-blur-sm transition-all duration-200 ${
+                      chunk.isTranslating ? 'border-indigo-200 shadow-indigo-100' : 'border-slate-200'
+                    }`}>
                       <p className="text-sm text-slate-600 whitespace-pre-wrap">
                         {chunk.translatedText || chunk.partialTranslation}
                       </p>

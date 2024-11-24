@@ -65,7 +65,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
     }
 
     const response = await claude.messages.create({
-      model: "claude-3-sonnet-20240229",
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 4096,
       messages: [
         {
@@ -324,21 +324,29 @@ export async function POST(request: NextRequest) {
     // 开始异步翻译过程
     (async () => {
       try {
-        if (model === 'claude') {
+        if (model === 'claude-3-5-sonnet-20241022') {
+          let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
+          if (context) {
+            prompt = `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
+          }
+
           const messageStream = await anthropic.messages.stream({
             messages: [{
               role: 'user',
-              content: `Translate the following text to ${targetLang}:\n\n${text}`
+              content: prompt
             }],
             model: 'claude-3-sonnet-20240229',
             max_tokens: 4096,
             system: systemPrompt,
           });
 
+          let accumulatedText = '';
+
           // 监听文本输出
           messageStream.on('text', async (text) => {
+            accumulatedText += text;
             await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
+              encoder.encode(`data: ${JSON.stringify({ text: accumulatedText })}\n\n`)
             );
           });
 
@@ -353,9 +361,23 @@ export async function POST(request: NextRequest) {
 
           // 监听完成
           messageStream.on('end', async () => {
+            if (accumulatedText) {
+              await writer.write(
+                encoder.encode(`data: ${JSON.stringify({ text: accumulatedText, done: true })}\n\n`)
+              );
+            }
             await writer.write(encoder.encode('data: [DONE]\n\n'));
             await writer.close();
           });
+
+          // 监听中止
+          messageStream.on('abort', async () => {
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ error: 'Translation was aborted' })}\n\n`)
+            );
+            await writer.close();
+          });
+
         } else {
           // 处理其他模型的翻译...
           let translatedText: string;
