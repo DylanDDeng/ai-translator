@@ -170,12 +170,17 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
 
     let data: QwenAPIResponse;
     try {
-      data = await response.json();
+      const jsonResponse = await response.json();
+      // 验证响应是否符合预期的格式
+      if (!jsonResponse || !Array.isArray(jsonResponse.choices)) {
+        throw new Error('Invalid response format from Qwen API');
+      }
+      data = jsonResponse as QwenAPIResponse;
     } catch (jsonError) {
       console.error('Failed to parse Qwen API response:', jsonError);
       throw new Error('Invalid JSON response from Qwen API');
     }
-    
+
     if (!data.choices?.[0]?.message?.content) {
       console.error('Invalid Qwen API Response:', data);
       throw new Error('Empty response from Qwen API');
