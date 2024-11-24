@@ -76,6 +76,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       system: systemPrompt,
     }, {
       signal: controller.signal,
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -154,6 +155,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       }),
       signal: controller.signal,
       agent: proxyAgent, // 添加代理支持
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -170,17 +172,12 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
 
     let data: QwenAPIResponse;
     try {
-      const jsonResponse = await response.json();
-      // 验证响应是否符合预期的格式
-      if (!jsonResponse || !Array.isArray(jsonResponse.choices)) {
-        throw new Error('Invalid response format from Qwen API');
-      }
-      data = jsonResponse as QwenAPIResponse;
+      data = await response.json();
     } catch (jsonError) {
       console.error('Failed to parse Qwen API response:', jsonError);
       throw new Error('Invalid JSON response from Qwen API');
     }
-
+    
     if (!data.choices?.[0]?.message?.content) {
       console.error('Invalid Qwen API Response:', data);
       throw new Error('Empty response from Qwen API');
@@ -261,7 +258,9 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
           }
         ]
       }),
-      signal: controller.signal
+      signal: controller.signal,
+      agent: proxyAgent,
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -306,85 +305,16 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
 }
 
 export async function POST(request: NextRequest) {
-  const encoder = new TextEncoder();
-
   try {
-    const { text, targetLang, systemPrompt, model, context }: TranslationRequest = await request.json();
+    const { text, targetLang, model = 'claude-3-sonnet-20240229', systemPrompt, context } = await request.json() as TranslationRequest;
 
-    if (!text || !targetLang) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    // 创建流式响应
+    // Create a new TransformStream for streaming
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
+    const encoder = new TextEncoder();
 
-    // 开始异步翻译过程
-    (async () => {
-      try {
-        if (model === 'claude') {
-          const messageStream = await anthropic.messages.stream({
-            messages: [{
-              role: 'user',
-              content: `Translate the following text to ${targetLang}:\n\n${text}`
-            }],
-            model: 'claude-3-sonnet-20240229',
-            max_tokens: 4096,
-            system: systemPrompt,
-          });
-
-          // 监听文本输出
-          messageStream.on('text', async (text) => {
-            await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
-            );
-          });
-
-          // 监听错误
-          messageStream.on('error', async (error) => {
-            console.error('Stream error:', error);
-            await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ error: error.message })}\n\n`)
-            );
-            await writer.close();
-          });
-
-          // 监听完成
-          messageStream.on('end', async () => {
-            await writer.write(encoder.encode('data: [DONE]\n\n'));
-            await writer.close();
-          });
-        } else {
-          // 处理其他模型的翻译...
-          let translatedText: string;
-          if (model === 'qwen2.5-72b-Instruct-128k') {
-            translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
-          } else if (model === 'gemini-1.5-pro-002') {
-            translatedText = await translateWithGemini(text, targetLang, systemPrompt);
-          }
-          
-          if (translatedText) {
-            await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ text: translatedText })}\n\n`)
-            );
-          }
-          await writer.write(encoder.encode('data: [DONE]\n\n'));
-          await writer.close();
-        }
-      } catch (error) {
-        console.error('Translation error:', error);
-        await writer.write(
-          encoder.encode(`data: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' })}\n\n`)
-        );
-        await writer.close();
-      }
-    })();
-
-    // 返回流式响应
-    return new Response(stream.readable, {
+    // Start the streaming response
+    const response = new NextResponse(stream.readable, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -392,10 +322,64 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Initialize Anthropic client
+    const anthropic = new Anthropic({
+      apiKey: process.env.CLAUDE_API_KEY,
+    });
+
+    // Prepare the messages array
+    const messages = [];
+    
+    // Add system message if provided
+    if (systemPrompt) {
+      messages.push({ role: 'system', content: systemPrompt });
+    }
+    
+    // Add context if provided
+    if (context) {
+      messages.push({
+        role: 'user',
+        content: `Previous translation example:\nOriginal: ${context.text}\nTranslation: ${context.translation}`
+      });
+      messages.push({
+        role: 'assistant',
+        content: 'I understand the translation style from the example.'
+      });
+    }
+    
+    // Add the current text to translate
+    messages.push({
+      role: 'user',
+      content: `Translate the following text to ${targetLang}:\n${text}`
+    });
+
+    // Start the streaming request to Claude
+    const stream_response = await anthropic.messages.create({
+      messages: messages,
+      model: model,
+      max_tokens: 1024,
+      stream: true,
+    });
+
+    // Process the stream
+    for await (const chunk of stream_response) {
+      if (chunk.type === 'content_block_delta') {
+        const text = chunk.delta.text;
+        if (text) {
+          // Write each chunk to the stream
+          await writer.write(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
+        }
+      }
+    }
+
+    // Close the stream
+    await writer.close();
+    return response;
+
   } catch (error) {
-    console.error('Request processing error:', error);
+    console.error('Streaming error:', error);
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: 'An error occurred during translation' },
       { status: 500 }
     );
   }

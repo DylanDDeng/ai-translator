@@ -6,7 +6,6 @@ interface ChunkStatus {
   originalText: string;
   translatedText: string;
   isTranslating: boolean;
-  partialTranslation: string;
 }
 
 export default function Home() {
@@ -90,8 +89,7 @@ Follow these translation principles:
         setChunks(textChunks.map(chunk => ({
           originalText: chunk,
           translatedText: '',
-          isTranslating: false,
-          partialTranslation: ''
+          isTranslating: false
         })));
       } catch (err) {
         setError('Error reading file');
@@ -103,42 +101,14 @@ Follow these translation principles:
     }
   };
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!file || chunks.length === 0) return;
-
-    setIsLoading(true);
-    setError('');
-    
-    try {
-      // 重置所有块的翻译状态
-      setChunks(prev => prev.map(chunk => ({
-        ...chunk,
-        translatedText: '',
-        partialTranslation: '',
-        isTranslating: false
-      })));
-      
-      // 逐个翻译文本块
-      for (let i = 0; i < chunks.length; i++) {
-        await translateChunk(i);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const translateChunk = async (chunkIndex: number) => {
     if (!chunks[chunkIndex]) return;
 
     const currentChunk = chunks[chunkIndex];
     const previousChunk = chunkIndex > 0 ? chunks[chunkIndex - 1] : null;
 
-    // 更新当前块的状态为正在翻译
     setChunks(prev => prev.map((chunk, idx) => 
-      idx === chunkIndex ? { ...chunk, isTranslating: true, partialTranslation: '', translatedText: '' } : chunk
+      idx === chunkIndex ? { ...chunk, isTranslating: true } : chunk
     ));
 
     try {
@@ -159,79 +129,52 @@ Follow these translation principles:
         }),
       });
 
+      let data;
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        // 如果响应不是 JSON 格式，直接读取文本
+        const text = await response.text();
+        data = { error: text };
+      }
+      
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(data.error || 'Translation failed');
       }
 
-      if (!response.body) {
-        throw new Error('No response body');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            
-            if (data === '[DONE]') {
-              // 翻译完成，更新最终翻译
-              setChunks(prev => prev.map((chunk, idx) => 
-                idx === chunkIndex ? {
-                  ...chunk,
-                  translatedText: accumulatedText,
-                  partialTranslation: '',
-                  isTranslating: false
-                } : chunk
-              ));
-              break;
-            }
-            
-            try {
-              const parsedData = JSON.parse(data);
-              
-              if (parsedData.error) {
-                throw new Error(parsedData.error);
-              }
-              
-              if (parsedData.text) {
-                accumulatedText = parsedData.text;
-                // 更新部分翻译
-                setChunks(prev => prev.map((chunk, idx) => 
-                  idx === chunkIndex ? {
-                    ...chunk,
-                    partialTranslation: parsedData.text,
-                    // 如果收到 done 标记，将部分翻译移动到最终翻译
-                    ...(parsedData.done ? {
-                      translatedText: parsedData.text,
-                      partialTranslation: '',
-                      isTranslating: false
-                    } : {})
-                  } : chunk
-                ));
-              }
-            } catch (err) {
-              console.error('Error parsing stream data:', err);
-              // 继续处理下一行，不中断流
-            }
-          }
-        }
-      }
+      setChunks(prev => prev.map((chunk, idx) => 
+        idx === chunkIndex ? {
+          ...chunk,
+          translatedText: data.translatedText,
+          isTranslating: false
+        } : chunk
+      ));
 
     } catch (err) {
       console.error('Translation error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
       setChunks(prev => prev.map((chunk, idx) => 
-        idx === chunkIndex ? { ...chunk, isTranslating: false, partialTranslation: '', translatedText: '' } : chunk
+        idx === chunkIndex ? { ...chunk, isTranslating: false } : chunk
       ));
+    }
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file || chunks.length === 0) return;
+
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      for (let i = 0; i < chunks.length; i++) {
+        await translateChunk(i);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -393,24 +336,9 @@ Follow these translation principles:
                     Chunk {index + 1}
                   </h3>
                   {chunk.isTranslating && (
-                    <div className="flex items-center text-xs text-indigo-600">
-                      <svg className="animate-spin h-4 w-4 mr-1" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
+                    <span className="text-xs text-indigo-600">
                       Translating...
-                    </div>
+                    </span>
                   )}
                 </div>
 
@@ -421,12 +349,10 @@ Follow these translation principles:
                     </p>
                   </div>
 
-                  {(chunk.translatedText || chunk.partialTranslation) && (
-                    <div className={`p-4 bg-white/50 rounded-lg border backdrop-blur-sm transition-all duration-200 ${
-                      chunk.isTranslating ? 'border-indigo-200 shadow-indigo-100' : 'border-slate-200'
-                    }`}>
+                  {chunk.translatedText && (
+                    <div className="p-4 bg-white/50 rounded-lg border border-slate-200 backdrop-blur-sm">
                       <p className="text-sm text-slate-600 whitespace-pre-wrap">
-                        {chunk.translatedText || chunk.partialTranslation}
+                        {chunk.translatedText}
                       </p>
                     </div>
                   )}
