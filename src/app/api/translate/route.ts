@@ -76,7 +76,6 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       system: systemPrompt,
     }, {
       signal: controller.signal,
-      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -154,8 +153,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
         }
       }),
       signal: controller.signal,
-      agent: proxyAgent, // 添加代理支持
-      timeout: API_TIMEOUT
+      agent: proxyAgent
     });
 
     clearTimeout(timeoutId);
@@ -199,12 +197,6 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       if (error.message.includes('fetch failed')) {
         throw new Error('Network error: Unable to connect to Qwen API');
       }
-      // 更详细的错误日志
-      console.error('Qwen translation error:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      });
     }
     
     throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -259,8 +251,7 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
         ]
       }),
       signal: controller.signal,
-      agent: proxyAgent,
-      timeout: API_TIMEOUT
+      agent: proxyAgent
     });
 
     clearTimeout(timeoutId);
