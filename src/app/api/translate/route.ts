@@ -34,6 +34,16 @@ interface QwenAPIResponse {
   }[];
 }
 
+interface GeminiAPIResponse {
+  candidates: {
+    content: {
+      parts: {
+        text: string;
+      }[];
+    };
+  }[];
+}
+
 async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   const claude = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -126,43 +136,56 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
   }
 }
 
-async function translateWithGemini(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null) {
+async function translateWithGemini(text: string, targetLang: string, systemPrompt: string): Promise<string> {
   try {
-    let prompt = `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`;
-    
-    if (context) {
-      prompt = `${systemPrompt}\n\nContext:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
-    }
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+    const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': process.env.GEMINI_API_KEY || '',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
         },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 4096,
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
           },
-        }),
-        agent: proxyAgent
-      }
-    );
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          }
+        ]
+      })
+    });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Gemini API Error Response:', errorData);
-      throw new Error(`Gemini API request failed: ${response.status}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as GeminiAPIResponse;
     return data.candidates[0].content.parts[0].text;
   } catch (error) {
     console.error('Gemini API Error:', error);
@@ -183,7 +206,7 @@ export async function POST(request: NextRequest) {
     if (model === 'qwen2.5-72b-Instruct-128k') {
       translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
     } else if (model === 'gemini-1.5-pro-002') {
-      translatedText = await translateWithGemini(text, targetLang, systemPrompt, context);
+      translatedText = await translateWithGemini(text, targetLang, systemPrompt);
     } else {
       translatedText = await translateWithClaude(text, targetLang, systemPrompt, context);
     }
