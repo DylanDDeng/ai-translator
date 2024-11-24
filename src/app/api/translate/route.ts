@@ -76,7 +76,6 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       system: systemPrompt,
     }, {
       signal: controller.signal,
-      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -155,7 +154,6 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       }),
       signal: controller.signal,
       agent: proxyAgent, // 添加代理支持
-      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -258,9 +256,7 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
           }
         ]
       }),
-      signal: controller.signal,
-      agent: proxyAgent,
-      timeout: API_TIMEOUT
+      signal: controller.signal
     });
 
     clearTimeout(timeoutId);
