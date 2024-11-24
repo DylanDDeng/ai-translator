@@ -52,7 +52,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
 
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
+  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25秒超时
 
   try {
     let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
@@ -73,7 +73,6 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       system: systemPrompt,
     }, {
       signal: controller.signal,
-      timeout: 30000 // 30秒超时
     });
 
     clearTimeout(timeoutId);
@@ -101,8 +100,8 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
     clearTimeout(timeoutId);
     
     if (error instanceof Error) {
-      if (error.name === 'AbortError' || error.message.includes('timeout')) {
-        throw new Error('Translation request timed out after 30 seconds');
+      if (error.name === 'AbortError') {
+        throw new Error('Translation request timed out after 25 seconds');
       }
       if (error.message.includes('status code')) {
         throw new Error(`Claude API error: ${error.message}`);
@@ -114,6 +113,10 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
 }
 
 async function translateWithQwen(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
+  // 创建一个带超时的 AbortController
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25秒超时
+
   try {
     let prompt = `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`;
     
@@ -121,54 +124,35 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       prompt = `${systemPrompt}\n\nContext:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
     }
 
-    // 使用 Promise.race 实现超时控制
-    const fetchWithTimeout = async (url: string, options: RequestInit, timeout: number) => {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeout);
-
-      try {
-        const response = await fetch(url, {
-          ...options,
-          signal: controller.signal,
-        });
-        clearTimeout(id);
-        return response;
-      } catch (error) {
-        clearTimeout(id);
-        throw error;
-      }
-    };
-
-    const response = await fetchWithTimeout(
-      'https://api.siliconflow.cn/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.QWEN_API_KEY || ''}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: "Qwen/Qwen2.5-72B-Instruct-128K",
-          messages: [
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-          stream: false,
-          max_tokens: 4096,
-          temperature: 0.7,
-          top_p: 0.7,
-          top_k: 50,
-          frequency_penalty: 0.5,
-          n: 1,
-          response_format: {
-            type: "text"
-          }
-        })
+    const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.QWEN_API_KEY || ''}`,
+        'Content-Type': 'application/json'
       },
-      25000 // 25 秒超时
-    );
+      body: JSON.stringify({
+        model: "Qwen/Qwen2.5-72B-Instruct-128K",
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        stream: false,
+        max_tokens: 4096,
+        temperature: 0.7,
+        top_p: 0.7,
+        top_k: 50,
+        frequency_penalty: 0.5,
+        n: 1,
+        response_format: {
+          type: "text"
+        }
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -194,82 +178,72 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
 
     return translatedText;
   } catch (error) {
+    clearTimeout(timeoutId);
+    
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
         throw new Error('Translation request timed out after 25 seconds');
       }
+      if (error.message.includes('fetch failed')) {
+        throw new Error('Network error: Unable to connect to Qwen API');
+      }
     }
-    console.error('Qwen API Error:', error);
+    
     throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
 async function translateWithGemini(text: string, targetLang: string, systemPrompt: string): Promise<string> {
+  // 创建一个带超时的 AbortController
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25秒超时
+
   try {
-    // 使用 Promise.race 实现超时控制
-    const fetchWithTimeout = async (url: string, options: RequestInit, timeout: number) => {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeout);
-
-      try {
-        const response = await fetch(url, {
-          ...options,
-          signal: controller.signal,
-        });
-        clearTimeout(id);
-        return response;
-      } catch (error) {
-        clearTimeout(id);
-        throw error;
-      }
-    };
-
-    const response = await fetchWithTimeout(
-      'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': process.env.GEMINI_API_KEY || '',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 4096,
-          },
-          safetySettings: [
-            {
-              category: "HARM_CATEGORY_HARASSMENT",
-              threshold: "BLOCK_MEDIUM_AND_ABOVE"
-            },
-            {
-              category: "HARM_CATEGORY_HATE_SPEECH",
-              threshold: "BLOCK_MEDIUM_AND_ABOVE"
-            },
-            {
-              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-              threshold: "BLOCK_MEDIUM_AND_ABOVE"
-            },
-            {
-              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-              threshold: "BLOCK_MEDIUM_AND_ABOVE"
-            }
-          ]
-        })
+    const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': process.env.GEMINI_API_KEY || '',
       },
-      25000 // 25 秒超时
-    );
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 4096,
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -295,12 +269,17 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
 
     return translatedText;
   } catch (error) {
+    clearTimeout(timeoutId);
+    
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
         throw new Error('Translation request timed out after 25 seconds');
       }
+      if (error.message.includes('fetch failed')) {
+        throw new Error('Network error: Unable to connect to Gemini API');
+      }
     }
-    console.error('Gemini API Error:', error);
+    
     throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
