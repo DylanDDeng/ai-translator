@@ -44,6 +44,9 @@ interface GeminiAPIResponse {
   }[];
 }
 
+// 设置统一的超时时间常量
+const API_TIMEOUT = 120000; // 120 秒，给网络延迟和处理时间留出余地
+
 async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   const claude = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -52,7 +55,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
 
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25秒超时
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
   try {
     let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
@@ -73,6 +76,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       system: systemPrompt,
     }, {
       signal: controller.signal,
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -101,7 +105,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
     
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        throw new Error('Translation request timed out after 25 seconds');
+        throw new Error('Translation request timed out after 120 seconds');
       }
       if (error.message.includes('status code')) {
         throw new Error(`Claude API error: ${error.message}`);
@@ -115,7 +119,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
 async function translateWithQwen(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25秒超时
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
   try {
     let prompt = `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`;
@@ -151,6 +155,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       }),
       signal: controller.signal,
       agent: proxyAgent, // 添加代理支持
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -189,7 +194,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
     
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        throw new Error('Translation request timed out after 25 seconds');
+        throw new Error('Translation request timed out after 120 seconds');
       }
       if (error.message.includes('fetch failed')) {
         throw new Error('Network error: Unable to connect to Qwen API');
@@ -209,7 +214,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
 async function translateWithGemini(text: string, targetLang: string, systemPrompt: string): Promise<string> {
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25秒超时
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
   try {
     const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent', {
@@ -253,7 +258,9 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
           }
         ]
       }),
-      signal: controller.signal
+      signal: controller.signal,
+      agent: proxyAgent,
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -286,7 +293,7 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
     
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        throw new Error('Translation request timed out after 25 seconds');
+        throw new Error('Translation request timed out after 120 seconds');
       }
       if (error.message.includes('fetch failed')) {
         throw new Error('Network error: Unable to connect to Gemini API');
