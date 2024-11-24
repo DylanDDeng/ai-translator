@@ -2,8 +2,8 @@ import './globals.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: '文档翻译工具',
-  description: '上传文档并翻译成中文',
+  title: 'Translate Document',
+  description: 'Upload document and translate into Chinese',
 }
 
 export default function RootLayout({
@@ -13,6 +13,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh">
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.1.0/style.css"
+        />
+      </head>
       <body>{children}</body>
     </html>
   )

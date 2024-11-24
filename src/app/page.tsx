@@ -1,66 +1,183 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, FormEvent } from 'react';
+
+interface ChunkStatus {
+  originalText: string;
+  translatedText: string;
+  isTranslating: boolean;
+}
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
-  const [translatedText, setTranslatedText] = useState<string>('');
+  const [chunks, setChunks] = useState<ChunkStatus[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [targetLang, setTargetLang] = useState('zh');
+  const [selectedModel, setSelectedModel] = useState('claude-3-5-sonnet-20241022');
+  const [systemPrompt, setSystemPrompt] = useState(`You are a professional translator specialized in accurate and natural translation.
+Follow these translation principles:
+1. Maintain the original meaning and context
+2. Preserve the original formatting and paragraph structure
+3. Use natural and idiomatic expressions in the target language
+4. Keep any technical terms, proper nouns, or special formatting intact
+5. Ensure consistency in terminology throughout the translation
+6. If there are any ambiguous terms or cultural references, translate them appropriately
+7. Return only the translated text without any explanations or notes`);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setFile(e.target.files[0]);
+  const languages = [
+    { code: 'zh', name: 'Chinese (中文)' },
+    { code: 'en', name: 'English' },
+    { code: 'es', name: 'Spanish (Español)' },
+    { code: 'fr', name: 'French (Français)' },
+    { code: 'de', name: 'German (Deutsch)' },
+    { code: 'ja', name: 'Japanese (日本語)' },
+    { code: 'ko', name: 'Korean (한국어)' },
+    { code: 'vi', name: 'Vietnamese (Tiếng Việt)' },
+  ];
+
+  const models = [
+    { 
+      id: 'claude-3-5-sonnet-20241022',
+      name: 'Claude-3.5-Sonnet-20241022',
+      description: 'Anthropic的Claude-3.5-Sonnet模型，擅长多语言翻译'
+    },
+    { 
+      id: 'qwen2.5-72b-Instruct-128k',
+      name: 'Qwen2.5-72B-Instruct-128K',
+      description: '通义千问72B大模型，支持多语言翻译'
+    },
+    {
+      id: 'gemini-1.5-pro-002',
+      name: 'Gemini-1.5-Pr-002',
+      description: 'Google的Gemini-1.5-Pro-002模型，支持多语言翻译'
+    }
+  ];
+
+  const splitTextIntoChunks = (text: string, chunkSize: number = 2000): string[] => {
+    const chunks: string[] = [];
+    let currentChunk = '';
+    const sentences = text.split(/(?<=[.!?。！？])\s+/);
+    
+    for (const sentence of sentences) {
+      if ((currentChunk + sentence).length <= chunkSize) {
+        currentChunk += (currentChunk ? ' ' : '') + sentence;
+      } else {
+        if (currentChunk) {
+          chunks.push(currentChunk);
+        }
+        currentChunk = sentence;
+      }
+    }
+    
+    if (currentChunk) {
+      chunks.push(currentChunk);
+    }
+    
+    return chunks;
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile && selectedFile.type === 'text/plain') {
+      setFile(selectedFile);
       setError('');
-      setTranslatedText('');
+      
+      try {
+        const text = await selectedFile.text();
+        const textChunks = splitTextIntoChunks(text);
+        setChunks(textChunks.map(chunk => ({
+          originalText: chunk,
+          translatedText: '',
+          isTranslating: false
+        })));
+      } catch (err) {
+        setError('Error reading file');
+        setFile(null);
+      }
+    } else {
+      setError('Please select a valid .txt file');
+      setFile(null);
     }
   };
 
-  const handleUpload = async () => {
-    if (!file) {
-      setError('请先选择文件');
-      return;
-    }
+  const translateChunk = async (chunkIndex: number) => {
+    if (!chunks[chunkIndex]) return;
 
-    if (file.type !== 'text/plain') {
-      setError('只支持 .txt 文件');
-      return;
-    }
+    const currentChunk = chunks[chunkIndex];
+    const previousChunk = chunkIndex > 0 ? chunks[chunkIndex - 1] : null;
 
-    setIsLoading(true);
-    setError('');
+    setChunks(prev => prev.map((chunk, idx) => 
+      idx === chunkIndex ? { ...chunk, isTranslating: true } : chunk
+    ));
 
     try {
-      const text = await file.text();
       const response = await fetch('/api/translate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({
+          text: currentChunk.originalText,
+          targetLang,
+          systemPrompt,
+          model: selectedModel,
+          context: previousChunk ? {
+            text: previousChunk.originalText,
+            translation: previousChunk.translatedText
+          } : null
+        }),
       });
 
+      const data = await response.json();
+      
       if (!response.ok) {
-        throw new Error('翻译请求失败');
+        throw new Error(data.error || 'Translation failed');
       }
 
-      const data = await response.json();
-      setTranslatedText(data.translatedText);
+      setChunks(prev => prev.map((chunk, idx) => 
+        idx === chunkIndex ? {
+          ...chunk,
+          translatedText: data.translatedText,
+          isTranslating: false
+        } : chunk
+      ));
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : '翻译过程中出现错误');
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      setChunks(prev => prev.map((chunk, idx) => 
+        idx === chunkIndex ? { ...chunk, isTranslating: false } : chunk
+      ));
+    }
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file || chunks.length === 0) return;
+
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      for (let i = 0; i < chunks.length; i++) {
+        await translateChunk(i);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDownload = () => {
-    if (!translatedText) return;
-
+    if (chunks.length === 0) return;
+    
+    const translatedText = chunks.map(chunk => chunk.translatedText).join('\n\n');
     const blob = new Blob([translatedText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'translated-document.txt';
+    a.download = `translated_${file?.name || 'text'}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -69,83 +186,182 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-8">
-      <div className="max-w-2xl mx-auto space-y-8">
-        <h1 className="text-3xl font-bold text-center text-gray-800">
-          文档翻译工具
-        </h1>
-        
-        <div className="space-y-4">
-          <div className="flex flex-col items-center justify-center w-full">
-            <label
-              htmlFor="file-upload"
-              className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100"
-            >
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                <svg
-                  className="w-8 h-8 mb-4 text-gray-500"
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 20 16"
+      <div className="max-w-[1920px] mx-8 animate-fade-in">
+        <div className="flex flex-col items-start mb-8">
+          <h1 className="logo-text">Document Translator</h1>
+          <div className="designer-text mt-2">Designed by Chengsheng</div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[400px,1fr] gap-8">
+          {/* Left Column - Input Section */}
+          <div className="space-y-6">
+            <div className="input-section rounded-xl p-6 shadow-soft animate-slide-up">
+              <div className="flex flex-col items-center justify-center w-full">
+                <label
+                  htmlFor="file"
+                  className="w-full cursor-pointer"
                 >
-                  <path
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
-                  />
-                </svg>
-                <p className="mb-2 text-sm text-gray-500">
-                  <span className="font-semibold">点击上传</span> 或拖拽文件到这里
-                </p>
-                <p className="text-xs text-gray-500">仅支持 TXT 文件</p>
+                  <div className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg hover:border-indigo-500 transition-colors">
+                    {file ? (
+                      <div className="text-center">
+                        <p className="text-sm text-slate-600">{file.name}</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Click to change file
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <p className="text-sm text-slate-600">
+                          Drop your file here or click to select
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Supports .txt files
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </label>
+                <input
+                  type="file"
+                  id="file"
+                  accept=".txt"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
               </div>
-              <input
-                id="file-upload"
-                type="file"
-                accept=".txt"
-                className="hidden"
-                onChange={handleFileChange}
+
+              <div className="mt-6 space-y-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Translation Model
+                </label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="w-full p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm"
+                >
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} - {model.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-6 space-y-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Target Language
+                </label>
+                <select
+                  value={targetLang}
+                  onChange={(e) => setTargetLang(e.target.value)}
+                  className="w-full p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm"
+                >
+                  {languages.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-6">
+                <button
+                  onClick={handleSubmit}
+                  disabled={!file || isLoading}
+                  className={`w-full px-4 py-2.5 text-white rounded-lg shadow-sm transition-all duration-300 ${
+                    !file || isLoading
+                      ? 'bg-slate-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700'
+                  }`}
+                >
+                  {isLoading ? (
+                    <span className="flex items-center justify-center">
+                      <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Translating...
+                    </span>
+                  ) : (
+                    'Translate'
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* System Prompt Section */}
+            <div className="prompt-section rounded-xl p-6 shadow-soft">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                System Prompt
+              </label>
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                className="w-full h-[calc(100vh-600px)] min-h-[300px] p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm resize-none"
               />
-            </label>
+            </div>
           </div>
 
-          {file && (
-            <p className="text-sm text-gray-600">
-              已选择文件: {file.name}
-            </p>
-          )}
-
-          {error && (
-            <p className="text-sm text-red-600">
-              {error}
-            </p>
-          )}
-
-          <button
-            onClick={handleUpload}
-            disabled={!file || isLoading}
-            className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            {isLoading ? '翻译中...' : '开始翻译'}
-          </button>
-
-          {translatedText && (
-            <div className="space-y-4">
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <h2 className="text-lg font-semibold mb-2">翻译结果：</h2>
-                <p className="whitespace-pre-wrap">{translatedText}</p>
+          {/* Right Column - Translation Section */}
+          <div className="translation-section rounded-xl p-6 shadow-soft h-[calc(100vh-140px)] overflow-auto custom-scrollbar">
+            {error && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-600">{error}</p>
               </div>
-              
-              <button
-                onClick={handleDownload}
-                className="w-full px-4 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700"
-              >
-                下载翻译结果
-              </button>
-            </div>
-          )}
+            )}
+
+            {chunks.map((chunk, index) => (
+              <div key={index} className="mb-8 last:mb-0">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-slate-700">
+                    Chunk {index + 1}
+                  </h3>
+                  {chunk.isTranslating && (
+                    <span className="text-xs text-indigo-600">
+                      Translating...
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="p-4 bg-white/50 rounded-lg border border-slate-200 backdrop-blur-sm">
+                    <p className="text-sm text-slate-600 whitespace-pre-wrap">
+                      {chunk.originalText}
+                    </p>
+                  </div>
+
+                  {chunk.translatedText && (
+                    <div className="p-4 bg-white/50 rounded-lg border border-slate-200 backdrop-blur-sm">
+                      <p className="text-sm text-slate-600 whitespace-pre-wrap">
+                        {chunk.translatedText}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {file && chunks.length > 0 && (
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={handleDownload}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  Download Translation
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </main>

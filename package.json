@@ -9,7 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@google/generative-ai": "^0.21.0",
+    "https-proxy-agent": "^7.0.5",
     "next": "^14.0.3",
+    "node-fetch": "^3.3.2",
     "openai": "^4.73.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
