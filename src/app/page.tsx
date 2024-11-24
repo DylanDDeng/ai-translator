@@ -6,6 +6,7 @@ interface ChunkStatus {
   originalText: string;
   translatedText: string;
   isTranslating: boolean;
+  partialTranslation: string;
 }
 
 export default function Home() {
@@ -89,7 +90,8 @@ Follow these translation principles:
         setChunks(textChunks.map(chunk => ({
           originalText: chunk,
           translatedText: '',
-          isTranslating: false
+          isTranslating: false,
+          partialTranslation: ''
         })));
       } catch (err) {
         setError('Error reading file');
@@ -108,7 +110,7 @@ Follow these translation principles:
     const previousChunk = chunkIndex > 0 ? chunks[chunkIndex - 1] : null;
 
     setChunks(prev => prev.map((chunk, idx) => 
-      idx === chunkIndex ? { ...chunk, isTranslating: true } : chunk
+      idx === chunkIndex ? { ...chunk, isTranslating: true, partialTranslation: '' } : chunk
     ));
 
     try {
@@ -129,33 +131,65 @@ Follow these translation principles:
         }),
       });
 
-      let data;
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        // 如果响应不是 JSON 格式，直接读取文本
-        const text = await response.text();
-        data = { error: text };
-      }
-      
       if (!response.ok) {
-        throw new Error(data.error || 'Translation failed');
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      setChunks(prev => prev.map((chunk, idx) => 
-        idx === chunkIndex ? {
-          ...chunk,
-          translatedText: data.translatedText,
-          isTranslating: false
-        } : chunk
-      ));
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Failed to get response reader');
+      }
+
+      const decoder = new TextDecoder();
+      let accumulatedTranslation = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                accumulatedTranslation += data.text;
+                // 更新部分翻译
+                setChunks(prev => prev.map((chunk, idx) => 
+                  idx === chunkIndex ? {
+                    ...chunk,
+                    partialTranslation: accumulatedTranslation
+                  } : chunk
+                ));
+              } else if (data.error) {
+                throw new Error(data.error);
+              } else if (line.includes('[DONE]')) {
+                // 翻译完成，更新最终结果
+                setChunks(prev => prev.map((chunk, idx) => 
+                  idx === chunkIndex ? {
+                    ...chunk,
+                    translatedText: accumulatedTranslation,
+                    isTranslating: false,
+                    partialTranslation: ''
+                  } : chunk
+                ));
+                return;
+              }
+            } catch (err) {
+              console.error('Error parsing stream data:', err);
+              throw new Error('Failed to parse translation stream');
+            }
+          }
+        }
+      }
 
     } catch (err) {
       console.error('Translation error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
       setChunks(prev => prev.map((chunk, idx) => 
-        idx === chunkIndex ? { ...chunk, isTranslating: false } : chunk
+        idx === chunkIndex ? { ...chunk, isTranslating: false, partialTranslation: '' } : chunk
       ));
     }
   };
@@ -349,10 +383,10 @@ Follow these translation principles:
                     </p>
                   </div>
 
-                  {chunk.translatedText && (
+                  {(chunk.translatedText || chunk.partialTranslation) && (
                     <div className="p-4 bg-white/50 rounded-lg border border-slate-200 backdrop-blur-sm">
                       <p className="text-sm text-slate-600 whitespace-pre-wrap">
-                        {chunk.translatedText}
+                        {chunk.translatedText || chunk.partialTranslation}
                       </p>
                     </div>
                   )}

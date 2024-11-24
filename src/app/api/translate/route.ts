@@ -305,76 +305,97 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
 }
 
 export async function POST(request: NextRequest) {
+  const encoder = new TextEncoder();
+
   try {
     const { text, targetLang, systemPrompt, model, context }: TranslationRequest = await request.json();
 
     if (!text || !targetLang) {
       return NextResponse.json(
         { error: 'Missing required fields' },
-        { 
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
+        { status: 400 }
       );
     }
 
-    // 检查文本长度
-    if (text.length > 5000) {
-      return NextResponse.json(
-        { error: 'Text is too long. Please limit to 5000 characters.' },
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-    }
+    // 创建流式响应
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
 
-    let translatedText: string;
-    try {
-      if (model === 'qwen2.5-72b-Instruct-128k') {
-        translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
-      } else if (model === 'gemini-1.5-pro-002') {
-        translatedText = await translateWithGemini(text, targetLang, systemPrompt);
-      } else {
-        translatedText = await translateWithClaude(text, targetLang, systemPrompt, context);
-      }
+    // 开始异步翻译过程
+    (async () => {
+      try {
+        if (model === 'claude') {
+          const messageStream = await anthropic.messages.stream({
+            messages: [{
+              role: 'user',
+              content: `Translate the following text to ${targetLang}:\n\n${text}`
+            }],
+            model: 'claude-3-sonnet-20240229',
+            max_tokens: 4096,
+            system: systemPrompt,
+          });
 
-      return NextResponse.json(
-        { translatedText },
-        {
-          headers: {
-            'Content-Type': 'application/json'
+          // 监听文本输出
+          messageStream.on('text', async (text) => {
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
+            );
+          });
+
+          // 监听错误
+          messageStream.on('error', async (error) => {
+            console.error('Stream error:', error);
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ error: error.message })}\n\n`)
+            );
+            await writer.close();
+          });
+
+          // 监听完成
+          messageStream.on('end', async () => {
+            await writer.write(encoder.encode('data: [DONE]\n\n'));
+            await writer.close();
+          });
+        } else {
+          // 处理其他模型的翻译...
+          let translatedText: string;
+          if (model === 'qwen2.5-72b-Instruct-128k') {
+            translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
+          } else if (model === 'gemini-1.5-pro-002') {
+            translatedText = await translateWithGemini(text, targetLang, systemPrompt);
           }
+          
+          if (translatedText) {
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ text: translatedText })}\n\n`)
+            );
+          }
+          await writer.write(encoder.encode('data: [DONE]\n\n'));
+          await writer.close();
         }
-      );
-    } catch (error) {
-      if (error instanceof Error && (error.message.includes('timed out') || error.name === 'AbortError')) {
-        return NextResponse.json(
-          { error: 'Translation request timed out. Please try with a shorter text or try again later.' },
-          { 
-            status: 504,
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
+      } catch (error) {
+        console.error('Translation error:', error);
+        await writer.write(
+          encoder.encode(`data: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' })}\n\n`)
         );
+        await writer.close();
       }
-      throw error;
-    }
+    })();
+
+    // 返回流式响应
+    return new Response(stream.readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
+
   } catch (error) {
-    console.error('Translation error:', error);
+    console.error('Request processing error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Translation failed' },
-      { 
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
+      { error: 'Failed to process request' },
+      { status: 500 }
     );
   }
 }
