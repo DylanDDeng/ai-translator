@@ -26,28 +26,45 @@ interface TranslationRequest {
   } | null;
 }
 
-async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null) {
+async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
+  const claude = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY || '',
+  });
+
   try {
-    let prompt = `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`;
+    let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
     
     if (context) {
-      prompt = `${systemPrompt}\n\nContext:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
+      prompt = `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
     }
 
-    const response = await anthropic.messages.create({
+    const response = await claude.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 4096,
-      temperature: 0.7,
-      system: systemPrompt,
       messages: [
         {
           role: "user",
-          content: prompt,
-        },
+          content: prompt
+        }
       ],
+      system: systemPrompt,
     });
 
-    return response.content[0].text;
+    if (!response.content || response.content.length === 0) {
+      throw new Error('No translation result');
+    }
+
+    // Extract text from the response content
+    const translatedText = response.content
+      .map(block => {
+        if (block.type === 'text') {
+          return block.text;
+        }
+        return '';
+      })
+      .join('');
+
+    return translatedText;
   } catch (error) {
     console.error('Claude API Error:', error);
     throw new Error('Translation failed');
