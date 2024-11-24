@@ -15,7 +15,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [targetLang, setTargetLang] = useState('zh');
-  const [selectedModel, setSelectedModel] = useState('claude-3-sonnet-20240229');
+  const [selectedModel, setSelectedModel] = useState('claude-3-5-sonnet-20241022');
   const [systemPrompt, setSystemPrompt] = useState(`You are a professional translator specialized in accurate and natural translation.
 Follow these translation principles:
 1. Maintain the original meaning and context
@@ -39,19 +39,19 @@ Follow these translation principles:
 
   const models = [
     { 
-      id: 'claude-3-sonnet-20240229',
-      name: 'Claude 3 Sonnet',
-      description: 'Anthropic的Claude 3 Sonnet模型，擅长多语言翻译'
+      id: 'claude-3-5-sonnet-20241022',
+      name: 'Claude-3.5-Sonnet-20241022',
+      description: 'Anthropic的Claude-3.5-Sonnet模型，擅长多语言翻译'
     },
     { 
-      id: 'qwen',
-      name: 'Qwen2.5-72B',
+      id: 'qwen2.5-72b-Instruct-128k',
+      name: 'Qwen2.5-72B-Instruct-128K',
       description: '通义千问72B大模型，支持多语言翻译'
     },
     {
-      id: 'gemini',
-      name: 'Gemini 1.5 Pro',
-      description: 'Google的Gemini 1.5 Pro模型，支持多语言翻译'
+      id: 'gemini-1.5-pro-002',
+      name: 'Gemini-1.5-Pr-002',
+      description: 'Google的Gemini-1.5-Pro-002模型，支持多语言翻译'
     }
   ];
 
@@ -103,14 +103,42 @@ Follow these translation principles:
     }
   };
 
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file || chunks.length === 0) return;
+
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      // 重置所有块的翻译状态
+      setChunks(prev => prev.map(chunk => ({
+        ...chunk,
+        translatedText: '',
+        partialTranslation: '',
+        isTranslating: false
+      })));
+      
+      // 逐个翻译文本块
+      for (let i = 0; i < chunks.length; i++) {
+        await translateChunk(i);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const translateChunk = async (chunkIndex: number) => {
     if (!chunks[chunkIndex]) return;
 
     const currentChunk = chunks[chunkIndex];
     const previousChunk = chunkIndex > 0 ? chunks[chunkIndex - 1] : null;
 
+    // 更新当前块的状态为正在翻译
     setChunks(prev => prev.map((chunk, idx) => 
-      idx === chunkIndex ? { ...chunk, isTranslating: true, partialTranslation: '' } : chunk
+      idx === chunkIndex ? { ...chunk, isTranslating: true, partialTranslation: '', translatedText: '' } : chunk
     ));
 
     try {
@@ -141,6 +169,7 @@ Follow these translation principles:
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let accumulatedText = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -152,7 +181,19 @@ Follow these translation principles:
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6).trim();
-            if (!data) continue;
+            
+            if (data === '[DONE]') {
+              // 翻译完成，更新最终翻译
+              setChunks(prev => prev.map((chunk, idx) => 
+                idx === chunkIndex ? {
+                  ...chunk,
+                  translatedText: accumulatedText,
+                  partialTranslation: '',
+                  isTranslating: false
+                } : chunk
+              ));
+              break;
+            }
             
             try {
               const parsedData = JSON.parse(data);
@@ -162,55 +203,35 @@ Follow these translation principles:
               }
               
               if (parsedData.text) {
+                accumulatedText = parsedData.text;
+                // 更新部分翻译
                 setChunks(prev => prev.map((chunk, idx) => 
                   idx === chunkIndex ? {
                     ...chunk,
                     partialTranslation: parsedData.text,
-                    translatedText: parsedData.text
+                    // 如果收到 done 标记，将部分翻译移动到最终翻译
+                    ...(parsedData.done ? {
+                      translatedText: parsedData.text,
+                      partialTranslation: '',
+                      isTranslating: false
+                    } : {})
                   } : chunk
                 ));
               }
             } catch (err) {
               console.error('Error parsing stream data:', err);
+              // 继续处理下一行，不中断流
             }
           }
         }
       }
 
-      // 确保在流结束时更新状态
-      setChunks(prev => prev.map((chunk, idx) => 
-        idx === chunkIndex ? {
-          ...chunk,
-          translatedText: chunk.partialTranslation || chunk.translatedText,
-          partialTranslation: '',
-          isTranslating: false
-        } : chunk
-      ));
-
     } catch (err) {
       console.error('Translation error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
       setChunks(prev => prev.map((chunk, idx) => 
-        idx === chunkIndex ? { ...chunk, isTranslating: false, partialTranslation: '' } : chunk
+        idx === chunkIndex ? { ...chunk, isTranslating: false, partialTranslation: '', translatedText: '' } : chunk
       ));
-    }
-  };
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!file || chunks.length === 0) return;
-
-    setIsLoading(true);
-    setError('');
-    
-    try {
-      for (let i = 0; i < chunks.length; i++) {
-        await translateChunk(i);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setIsLoading(false);
     }
   };
 
