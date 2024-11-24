@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
     // 开始异步翻译过程
     (async () => {
       try {
-        if (model === 'claude-3-5-sonnet-20241022') {
+        if (model === 'claude-3-sonnet-20240229') {
           let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
           if (context) {
             prompt = `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
@@ -352,38 +352,41 @@ export async function POST(request: NextRequest) {
 
           // 监听完成
           messageStream.on('end', async () => {
-            if (accumulatedText) {
-              await writer.write(
-                encoder.encode(`data: ${JSON.stringify({ text: accumulatedText, done: true })}\n\n`)
-              );
-            }
-            await writer.write(encoder.encode('data: [DONE]\n\n'));
             await writer.close();
           });
 
-          // 监听中止
-          messageStream.on('abort', async () => {
-            await writer.write(
-              encoder.encode(`data: ${JSON.stringify({ error: 'Translation was aborted' })}\n\n`)
-            );
-            await writer.close();
-          });
-
-        } else {
-          // 处理其他模型的翻译...
-          let translatedText: string;
-          if (model === 'qwen2.5-72b-Instruct-128k') {
-            translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
-          } else if (model === 'gemini-1.5-pro-002') {
-            translatedText = await translateWithGemini(text, targetLang, systemPrompt);
-          }
-          
-          if (translatedText) {
+        } else if (model === 'qwen') {
+          try {
+            const translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
             await writer.write(
               encoder.encode(`data: ${JSON.stringify({ text: translatedText })}\n\n`)
             );
+          } catch (error) {
+            console.error('Qwen translation error:', error);
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' })}\n\n`)
+            );
+          } finally {
+            await writer.close();
           }
-          await writer.write(encoder.encode('data: [DONE]\n\n'));
+        } else if (model === 'gemini') {
+          try {
+            const translatedText = await translateWithGemini(text, targetLang, systemPrompt);
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ text: translatedText })}\n\n`)
+            );
+          } catch (error) {
+            console.error('Gemini translation error:', error);
+            await writer.write(
+              encoder.encode(`data: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' })}\n\n`)
+            );
+          } finally {
+            await writer.close();
+          }
+        } else {
+          await writer.write(
+            encoder.encode(`data: ${JSON.stringify({ error: 'Invalid model selection' })}\n\n`)
+          );
           await writer.close();
         }
       } catch (error) {
@@ -395,19 +398,17 @@ export async function POST(request: NextRequest) {
       }
     })();
 
-    // 返回流式响应
-    return new Response(stream.readable, {
+    return new NextResponse(stream.readable, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
       },
     });
-
   } catch (error) {
     console.error('Request processing error:', error);
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
