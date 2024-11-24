@@ -121,106 +121,187 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       prompt = `${systemPrompt}\n\nContext:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
     }
 
-    const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${QWEN_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: "Qwen/Qwen2.5-72B-Instruct-128K",
-        messages: [
-          {
-            role: "user",
-            content: prompt
+    // 使用 Promise.race 实现超时控制
+    const fetchWithTimeout = async (url: string, options: RequestInit, timeout: number) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+        clearTimeout(id);
+        return response;
+      } catch (error) {
+        clearTimeout(id);
+        throw error;
+      }
+    };
+
+    const response = await fetchWithTimeout(
+      'https://api.siliconflow.cn/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.QWEN_API_KEY || ''}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: "Qwen/Qwen2.5-72B-Instruct-128K",
+          messages: [
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          stream: false,
+          max_tokens: 4096,
+          temperature: 0.7,
+          top_p: 0.7,
+          top_k: 50,
+          frequency_penalty: 0.5,
+          n: 1,
+          response_format: {
+            type: "text"
           }
-        ],
-        stream: false,
-        max_tokens: 4096,
-        temperature: 0.7,
-        top_p: 0.7,
-        top_k: 50,
-        frequency_penalty: 0.5,
-        n: 1,
-        response_format: {
-          type: "text"
-        }
-      })
-    });
+        })
+      },
+      25000 // 25 秒超时
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Qwen API Error Response:', errorText);
+      console.error('Qwen API Error Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
       throw new Error(`Qwen API request failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as QwenAPIResponse;
     
     if (!data.choices?.[0]?.message?.content) {
-      throw new Error('Invalid response format from Qwen API');
+      console.error('Invalid Qwen API Response:', data);
+      throw new Error('Empty response from Qwen API');
     }
-    
-    return data.choices[0].message.content;
+
+    const translatedText = data.choices[0].message.content.trim();
+    if (!translatedText) {
+      throw new Error('Empty translation result');
+    }
+
+    return translatedText;
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Translation request timed out after 25 seconds');
+      }
+    }
     console.error('Qwen API Error:', error);
-    throw new Error('Qwen translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
 async function translateWithGemini(text: string, targetLang: string, systemPrompt: string): Promise<string> {
   try {
-    const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': process.env.GEMINI_API_KEY || '',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
+    // 使用 Promise.race 实现超时控制
+    const fetchWithTimeout = async (url: string, options: RequestInit, timeout: number) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+        clearTimeout(id);
+        return response;
+      } catch (error) {
+        clearTimeout(id);
+        throw error;
+      }
+    };
+
+    const response = await fetchWithTimeout(
+      'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': process.env.GEMINI_API_KEY || '',
         },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 4096,
           },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          }
-        ]
-      })
-    });
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_HARASSMENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_HATE_SPEECH",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            }
+          ]
+        })
+      },
+      25000 // 25 秒超时
+    );
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      console.error('Gemini API Error Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      throw new Error(`Gemini API request failed: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as GeminiAPIResponse;
-    return data.candidates[0].content.parts[0].text;
+    
+    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      console.error('Invalid Gemini API Response:', data);
+      throw new Error('Empty response from Gemini API');
+    }
+
+    const translatedText = data.candidates[0].content.parts[0].text.trim();
+    if (!translatedText) {
+      throw new Error('Empty translation result');
+    }
+
+    return translatedText;
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Translation request timed out after 25 seconds');
+      }
+    }
     console.error('Gemini API Error:', error);
-    throw new Error('Translation failed');
+    throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
