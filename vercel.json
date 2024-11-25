@@ -1,11 +1,5 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
-    }
-  ],
   "functions": {
     "src/app/api/**/*": {
       "maxDuration": 300,
@@ -20,10 +14,6 @@
         {
           "key": "Connection",
           "value": "keep-alive"
-        },
-        {
-          "key": "Keep-Alive",
-          "value": "timeout=300"
         }
       ]
     }
