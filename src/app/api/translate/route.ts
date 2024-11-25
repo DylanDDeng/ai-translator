@@ -180,6 +180,9 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
 }
 
 async function translateWithGemini(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+
   try {
     const completion = await openai.chat.completions.create({
       model: "google/gemini-pro-1.5",
@@ -194,7 +197,7 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
         }
       ],
       stream: true
-    });
+    }, { signal: controller.signal });
 
     let translatedText = '';
     for await (const chunk of completion) {
@@ -203,13 +206,22 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
       }
     }
 
+    clearTimeout(timeoutId);
+
     if (!translatedText.trim()) {
       throw new Error('Empty translation result from Gemini');
     }
 
     return translatedText;
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error('Gemini translation error:', error);
+    
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Translation request timed out after 270 seconds');
+      }
+    }
     throw error;
   }
 }
