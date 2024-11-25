@@ -17,22 +17,18 @@ const anthropic = new Anthropic({
 
 // 检查特定模型的 API 密钥
 function checkApiKey(model: string): void {
-  switch (model) {
-    case 'claude':
-      if (!ANTHROPIC_API_KEY) {
-        throw new Error('ANTHROPIC_API_KEY is not set in environment variables');
-      }
-      break;
-    case 'qwen':
-      if (!QWEN_API_KEY) {
-        throw new Error('QWEN_API_KEY is not set in environment variables');
-      }
-      break;
-    case 'gemini':
-      if (!GEMINI_API_KEY) {
-        throw new Error('GEMINI_API_KEY is not set in environment variables');
-      }
-      break;
+  if (model.startsWith('claude')) {
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY is not set in environment variables');
+    }
+  } else if (model.startsWith('qwen')) {
+    if (!QWEN_API_KEY) {
+      throw new Error('QWEN_API_KEY is not set in environment variables');
+    }
+  } else if (model.startsWith('gemini')) {
+    if (!GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY is not set in environment variables');
+    }
   }
 }
 
@@ -333,21 +329,17 @@ export async function POST(request: NextRequest) {
 
     // 根据选择的模型调用相应的翻译函数
     let translatedText;
-    switch (model) {
-      case 'claude':
-        translatedText = await translateWithClaude(text, targetLang, systemPrompt);
-        break;
-      case 'qwen':
-        translatedText = await translateWithQwen(text, targetLang, systemPrompt);
-        break;
-      case 'gemini':
-        translatedText = await translateWithGemini(text, targetLang, systemPrompt);
-        break;
-      default:
-        return new NextResponse(JSON.stringify({ error: 'Unsupported model' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
+    if (model.startsWith('claude')) {
+      translatedText = await translateWithClaude(text, targetLang, systemPrompt);
+    } else if (model.startsWith('qwen')) {
+      translatedText = await translateWithQwen(text, targetLang, systemPrompt);
+    } else if (model.startsWith('gemini')) {
+      translatedText = await translateWithGemini(text, targetLang, systemPrompt);
+    } else {
+      return new NextResponse(JSON.stringify({ error: 'Unsupported model' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     return new NextResponse(JSON.stringify({ translatedText }), {
