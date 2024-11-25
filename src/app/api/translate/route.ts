@@ -344,8 +344,14 @@ export async function POST(request: NextRequest) {
 
     // Process the stream
     for await (const chunk of stream_response) {
-      if (chunk.type === 'content_block_delta') {
-        const text = typeof chunk.delta === 'string' ? chunk.delta : chunk.delta.value;
+      if (chunk.type === 'content_block_delta' && chunk.delta) {
+        let text = '';
+        if (typeof chunk.delta === 'string') {
+          text = chunk.delta;
+        } else if ('text' in chunk.delta) {
+          text = chunk.delta.text;
+        }
+        
         if (text) {
           // Write each chunk to the stream
           await writer.write(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
