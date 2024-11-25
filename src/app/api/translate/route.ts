@@ -84,6 +84,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
         }
       ],
       system: systemPrompt,
+      temperature: 0.7,
     }, {
       signal: controller.signal,
     });
@@ -95,16 +96,9 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
     }
 
     // Extract text from the response content
-    const translatedText = response.content
-      .map(block => {
-        if (block.type === 'text') {
-          return block.text;
-        }
-        return '';
-      })
-      .join('');
+    const translatedText = response.content[0]?.text;
 
-    if (!translatedText.trim()) {
+    if (!translatedText?.trim()) {
       throw new Error('Empty translation result');
     }
 
@@ -116,7 +110,9 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       if (error.name === 'AbortError') {
         throw new Error('Translation request timed out after 270 seconds');
       }
-      if (error.message.includes('status code')) {
+      // 添加更详细的错误信息
+      console.error('Claude API Error:', error);
+      if (typeof error.message === 'string' && error.message.includes('status code')) {
         throw new Error(`Claude API error: ${error.message}`);
       }
     }
