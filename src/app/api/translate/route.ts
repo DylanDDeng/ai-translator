@@ -118,7 +118,6 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       }),
       signal: controller.signal,
       agent: proxyAgent, // 添加代理支持
-      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
