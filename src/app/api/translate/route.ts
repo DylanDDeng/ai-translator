@@ -4,9 +4,22 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import fetch from 'node-fetch';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const QWEN_API_KEY = process.env.QWEN_API_KEY || 'sk-xlndenigzaoyatyrfqrdspdzqvymzlfwtdbmmbxqxgzeyyoa';
-const GEMINI_API_KEY = 'AIzaSyCZ4FSL7P_bL2fL_F53fBcSskpJCydJbEM';
+const QWEN_API_KEY = process.env.QWEN_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const HTTPS_PROXY = process.env.HTTPS_PROXY;
+
+// 验证必要的 API 密钥是否存在
+if (!ANTHROPIC_API_KEY) {
+  throw new Error('ANTHROPIC_API_KEY is not set in environment variables');
+}
+
+if (!QWEN_API_KEY) {
+  throw new Error('QWEN_API_KEY is not set in environment variables');
+}
+
+if (!GEMINI_API_KEY) {
+  throw new Error('GEMINI_API_KEY is not set in environment variables');
+}
 
 const proxyAgent = HTTPS_PROXY ? new HttpsProxyAgent(HTTPS_PROXY) : undefined;
 
