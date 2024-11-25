@@ -35,16 +35,11 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       },
       {
         role: "user",
-        content: [
-          {
-            type: "text",
-            text: context 
-              ? `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`
-              : `Translate the following text to ${targetLang}:\n\n${text}`
-          }
-        ]
+        content: context 
+          ? `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`
+          : `Translate the following text to ${targetLang}:\n\n${text}`
       }
-    ];
+    ] as const;
 
     const stream = await openai.chat.completions.create({
       model: "anthropic/claude-3.5-sonnet",
