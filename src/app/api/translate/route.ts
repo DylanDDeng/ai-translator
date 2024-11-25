@@ -4,10 +4,10 @@ import fetch from 'node-fetch';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const OPENROUTER_API_KEY = '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';
-const QWEN_API_KEY = 'sk-xlndenigzaoyatyrfqrdspdzqvymzlfwtdbmmbxqxgzeyyoa';
-const GEMINI_API_KEY = 'AIzaSyCZ4FSL7P_bL2fL_F53fBcSskpJCydJbEM';
-const DEEPSEEK_API_KEY = 'sk-cb73fbc10dfb477593ecb1c4f056ebd5';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const QWEN_API_KEY = process.env.QWEN_API_KEY || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
 const HTTPS_PROXY = process.env.HTTPS_PROXY;
 
 const proxyAgent = HTTPS_PROXY ? new HttpsProxyAgent(HTTPS_PROXY) : undefined;
