@@ -26,14 +26,6 @@ interface TranslationRequest {
   } | null;
 }
 
-interface QwenAPIResponse {
-  choices: {
-    message: {
-      content: string;
-    };
-  }[];
-}
-
 interface GeminiAPIResponse {
   candidates: {
     content: {
@@ -170,30 +162,13 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       throw new Error(`Qwen API request failed: ${response.status} - ${errorText}`);
     }
 
-    let data: QwenAPIResponse;
-    try {
-      const jsonResponse = await response.json();
-      // 验证响应数据是否符合预期格式
-      if (!jsonResponse || !Array.isArray(jsonResponse.choices)) {
-        throw new Error('Invalid response format from Qwen API');
-      }
-      data = jsonResponse as QwenAPIResponse;
-    } catch (jsonError) {
-      console.error('Failed to parse Qwen API response:', jsonError);
-      throw new Error('Invalid JSON response from Qwen API');
-    }
-    
-    if (!data.choices?.[0]?.message?.content) {
-      console.error('Invalid Qwen API Response:', data);
+    // 直接获取文本响应
+    const translatedText = await response.text();
+    if (!translatedText) {
       throw new Error('Empty response from Qwen API');
     }
 
-    const translatedText = data.choices[0].message.content.trim();
-    if (!translatedText) {
-      throw new Error('Empty translation result');
-    }
-
-    return translatedText;
+    return translatedText.trim();
   } catch (error) {
     clearTimeout(timeoutId);
     
