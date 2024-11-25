@@ -4,6 +4,23 @@ import fetch from 'node-fetch';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+interface QwenAPIResponse {
+  id: string;
+  choices: {
+    index: number;
+    delta?: {
+      content?: string;
+    };
+    message?: {
+      content: string;
+    };
+  }[];
+  error?: {
+    message: string;
+    type: string;
+  };
+}
+
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const QWEN_API_KEY = process.env.QWEN_API_KEY || '';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
