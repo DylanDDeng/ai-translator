@@ -1,105 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import fetch from 'node-fetch';
+import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const QWEN_API_KEY = process.env.QWEN_API_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const OPENROUTER_API_KEY = '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';
+const QWEN_API_KEY = 'sk-xlndenigzaoyatyrfqrdspdzqvymzlfwtdbmmbxqxgzeyyoa';
+const GEMINI_API_KEY = 'AIzaSyCZ4FSL7P_bL2fL_F53fBcSskpJCydJbEM';
+const DEEPSEEK_API_KEY = 'sk-cb73fbc10dfb477593ecb1c4f056ebd5';
 const HTTPS_PROXY = process.env.HTTPS_PROXY;
 
 const proxyAgent = HTTPS_PROXY ? new HttpsProxyAgent(HTTPS_PROXY) : undefined;
 
-const anthropic = new Anthropic({
-  apiKey: ANTHROPIC_API_KEY,
-  httpAgent: proxyAgent,
+const openai = new OpenAI({
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: OPENROUTER_API_KEY,
+  defaultHeaders: {
+    "HTTP-Referer": "http://localhost:3000",
+    "X-Title": "Translation App",
+  }
 });
 
-// 检查特定模型的 API 密钥
-function checkApiKey(model: string): void {
-  if (model.startsWith('claude')) {
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error('ANTHROPIC_API_KEY is not set in environment variables');
-    }
-  } else if (model.startsWith('qwen')) {
-    if (!QWEN_API_KEY) {
-      throw new Error('QWEN_API_KEY is not set in environment variables');
-    }
-  } else if (model.startsWith('gemini')) {
-    if (!GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY is not set in environment variables');
-    }
-  }
-}
-
-interface TranslationRequest {
-  text: string;
-  targetLang: string;
-  systemPrompt: string;
-  model: string;
-  context?: {
-    text: string;
-    translation: string;
-  } | null;
-}
-
-interface GeminiAPIResponse {
-  candidates: {
-    content: {
-      parts: {
-        text: string;
-      }[];
-    };
-  }[];
-}
-
-// 设置统一的超时时间常量
 const API_TIMEOUT = 270000; // 270 秒，给网络延迟和处理时间留出 30 秒的缓冲
 
 async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
-  checkApiKey('claude');
-  const claude = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY || '',
-    maxRetries: 0, // 禁用自动重试
-  });
-
-  // 创建一个带超时的 AbortController
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
   try {
-    let prompt = `Translate the following text to ${targetLang}:\n\n${text}`;
-    
-    if (context) {
-      prompt = `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
-    }
+    let messages = [
+      {
+        role: "system",
+        content: systemPrompt
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: context 
+              ? `Context:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`
+              : `Translate the following text to ${targetLang}:\n\n${text}`
+          }
+        ]
+      }
+    ];
 
-    const response = await claude.messages.create({
-      model: "claude-3-sonnet-20240229",
-      max_tokens: 4096,
-      messages: [
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      system: systemPrompt,
-      temperature: 0.7,
-    }, {
-      signal: controller.signal,
+    const stream = await openai.chat.completions.create({
+      model: "anthropic/claude-3.5-sonnet",
+      messages: messages,
+      stream: true,
     });
+
+    let translatedText = '';
+    for await (const chunk of stream) {
+      if (chunk.choices[0]?.delta?.content) {
+        translatedText += chunk.choices[0].delta.content;
+      }
+    }
 
     clearTimeout(timeoutId);
 
-    if (!response.content || response.content.length === 0) {
-      throw new Error('Empty response from Claude API');
-    }
-
-    // Extract text from the response content
-    const translatedText = response.content[0]?.text;
-
-    if (!translatedText?.trim()) {
-      throw new Error('Empty translation result');
+    if (!translatedText.trim()) {
+      throw new Error('Empty translation result from Claude');
     }
 
     return translatedText;
@@ -110,11 +73,11 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
       if (error.name === 'AbortError') {
         throw new Error('Translation request timed out after 270 seconds');
       }
-      // 添加更详细的错误信息
-      console.error('Claude API Error:', error);
-      if (typeof error.message === 'string' && error.message.includes('status code')) {
-        throw new Error(`Claude API error: ${error.message}`);
-      }
+      console.error('Claude translation error:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
     }
     
     throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -122,12 +85,9 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
 }
 
 async function translateWithQwen(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
-  checkApiKey('qwen');
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, API_TIMEOUT);
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
   try {
     let prompt = `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`;
@@ -139,7 +99,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
     const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.QWEN_API_KEY || ''}`,
+        'Authorization': `Bearer ${QWEN_API_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -163,6 +123,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       }),
       signal: controller.signal,
       agent: proxyAgent, // 添加代理支持
+      timeout: API_TIMEOUT
     });
 
     clearTimeout(timeoutId);
@@ -177,13 +138,25 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
       throw new Error(`Qwen API request failed: ${response.status} - ${errorText}`);
     }
 
-    // 直接获取文本响应
-    const translatedText = await response.text();
-    if (!translatedText) {
+    let data: QwenAPIResponse;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      console.error('Failed to parse Qwen API response:', jsonError);
+      throw new Error('Invalid JSON response from Qwen API');
+    }
+    
+    if (!data.choices?.[0]?.message?.content) {
+      console.error('Invalid Qwen API Response:', data);
       throw new Error('Empty response from Qwen API');
     }
 
-    return translatedText.trim();
+    const translatedText = data.choices[0].message.content.trim();
+    if (!translatedText) {
+      throw new Error('Empty translation result');
+    }
+
+    return translatedText;
   } catch (error) {
     clearTimeout(timeoutId);
     
@@ -206,82 +179,79 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
   }
 }
 
-async function translateWithGemini(text: string, targetLang: string, systemPrompt: string): Promise<string> {
-  checkApiKey('gemini');
-  // 创建一个带超时的 AbortController
+async function translateWithGemini(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "google/gemini-pro-1.5",
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional translator. Translate the following text to ${targetLang}. Keep the original formatting and maintain the meaning and tone of the source text.`
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ],
+      stream: true
+    });
+
+    let translatedText = '';
+    for await (const chunk of completion) {
+      if (chunk.choices[0]?.delta?.content) {
+        translatedText += chunk.choices[0].delta.content;
+      }
+    }
+
+    if (!translatedText.trim()) {
+      throw new Error('Empty translation result from Gemini');
+    }
+
+    return translatedText;
+  } catch (error) {
+    console.error('Gemini translation error:', error);
+    throw error;
+  }
+}
+
+async function translateWithDeepseek(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, API_TIMEOUT);
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
 
   try {
-    const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-002:generateContent', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': process.env.GEMINI_API_KEY || '',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 4096,
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          }
-        ]
-      }),
-      signal: controller.signal,
-      agent: proxyAgent,
+    const openai = new OpenAI({
+      baseURL: 'https://api.deepseek.com',
+      apiKey: DEEPSEEK_API_KEY
     });
+
+    let prompt = `${systemPrompt}\n\nTranslate the following text to ${targetLang}:\n\n${text}`;
+    
+    if (context) {
+      prompt = `${systemPrompt}\n\nContext:\nOriginal: ${context.text}\nTranslation: ${context.translation}\n\nNow translate the following text to ${targetLang}, maintaining consistency with the context above:\n\n${text}`;
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 4096,
+      stream: true,
+    }, { signal: controller.signal });
+
+    let translatedText = '';
+    for await (const chunk of completion) {
+      if (chunk.choices[0]?.delta?.content) {
+        translatedText += chunk.choices[0].delta.content;
+      }
+    }
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API Error Response:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorText
-      });
-      throw new Error(`Gemini API request failed: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json() as GeminiAPIResponse;
-    
-    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      console.error('Invalid Gemini API Response:', data);
-      throw new Error('Empty response from Gemini API');
-    }
-
-    const translatedText = data.candidates[0].content.parts[0].text.trim();
-    if (!translatedText) {
-      throw new Error('Empty translation result');
+    if (!translatedText.trim()) {
+      throw new Error('Empty translation result from Deepseek');
     }
 
     return translatedText;
@@ -292,61 +262,75 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
       if (error.name === 'AbortError') {
         throw new Error('Translation request timed out after 270 seconds');
       }
-      if (error.message.includes('fetch failed')) {
-        throw new Error('Network error: Unable to connect to Gemini API');
-      }
     }
-    
     throw new Error('Translation failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
   }
 }
 
+const client = new OpenAI({
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: OPENROUTER_API_KEY,
+  defaultHeaders: {
+    "HTTP-Referer": "http://localhost:3000",
+    "X-Title": "Translation App",
+  }
+});
+
 export async function POST(request: NextRequest) {
   try {
-    const { text, targetLang, systemPrompt, model } = await request.json() as TranslationRequest;
+    const { text, targetLang, systemPrompt, model, context } = await request.json();
 
-    // 检查必要的参数
-    if (!text || !targetLang || !model) {
-      return new NextResponse(JSON.stringify({ error: 'Missing required parameters' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const encoder = new TextEncoder();
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
 
-    // 检查模型的 API 密钥
-    try {
-      checkApiKey(model);
-    } catch (error) {
-      return new NextResponse(JSON.stringify({ error: error instanceof Error ? error.message : 'API key error' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const writeChunk = async (content: string) => {
+      const data = {
+        content
+      };
+      await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    };
 
-    // 根据选择的模型调用相应的翻译函数
-    let translatedText;
-    if (model.startsWith('claude')) {
-      translatedText = await translateWithClaude(text, targetLang, systemPrompt);
-    } else if (model.startsWith('qwen')) {
-      translatedText = await translateWithQwen(text, targetLang, systemPrompt);
-    } else if (model.startsWith('gemini')) {
-      translatedText = await translateWithGemini(text, targetLang, systemPrompt);
-    } else {
-      return new NextResponse(JSON.stringify({ error: 'Unsupported model' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    (async () => {
+      try {
+        let translatedText;
+        switch (model) {
+          case 'claude-3-5-sonnet-20241022':
+            translatedText = await translateWithClaude(text, targetLang, systemPrompt, context);
+            break;
+          case 'qwen2.5-72b-Instruct-128k':
+            translatedText = await translateWithQwen(text, targetLang, systemPrompt, context);
+            break;
+          case 'gemini-1.5-pro-002':
+            translatedText = await translateWithGemini(text, targetLang, systemPrompt, context);
+            break;
+          case 'deepseek-chat':
+            translatedText = await translateWithDeepseek(text, targetLang, systemPrompt, context);
+            break;
+          default:
+            throw new Error(`Unsupported model: ${model}`);
+        }
 
-    return new NextResponse(JSON.stringify({ translatedText }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+        await writeChunk(translatedText);
+        await writer.close();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        await writeChunk(`Error: ${errorMessage}`);
+        await writer.close();
+      }
+    })();
+
+    return new Response(stream.readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
   } catch (error) {
-    console.error('Translation error:', error);
-    return new NextResponse(JSON.stringify({ error: 'Translation failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return NextResponse.json(
+      { error: 'Failed to process translation request' },
+      { status: 500 }
+    );
   }
 }

@@ -6,6 +6,7 @@ interface ChunkStatus {
   originalText: string;
   translatedText: string;
   isTranslating: boolean;
+  isEditing: boolean;
 }
 
 export default function Home() {
@@ -51,27 +52,55 @@ Follow these translation principles:
       id: 'gemini-1.5-pro-002',
       name: 'Gemini-1.5-Pr-002',
       description: 'Google的Gemini-1.5-Pro-002模型，支持多语言翻译'
+    },
+    {
+      id: 'deepseek-chat',
+      name: 'Deepseek-Chat',
+      description: 'Deepseek大语言模型，支持多语言翻译'
     }
   ];
 
-  const splitTextIntoChunks = (text: string, chunkSize: number = 2000): string[] => {
+  const splitTextIntoChunks = (text: string, chunkSize: number = 1000): string[] => {
     const chunks: string[] = [];
-    let currentChunk = '';
-    const sentences = text.split(/(?<=[.!?。！？])\s+/);
+    let start = 0;
     
-    for (const sentence of sentences) {
-      if ((currentChunk + sentence).length <= chunkSize) {
-        currentChunk += (currentChunk ? ' ' : '') + sentence;
-      } else {
-        if (currentChunk) {
-          chunks.push(currentChunk);
+    while (start < text.length) {
+      let end = Math.min(start + chunkSize, text.length);
+      
+      if (end < text.length) {
+        // 在当前块中寻找最后一个句子结束符号
+        const segment = text.slice(start, end);
+        const lastPeriod = Math.max(
+          segment.lastIndexOf('。'),
+          segment.lastIndexOf('！'),
+          segment.lastIndexOf('？'),
+          segment.lastIndexOf('!'),
+          segment.lastIndexOf('?')
+        );
+        
+        if (lastPeriod !== -1) {
+          // 在句子结束符号处断开
+          end = start + lastPeriod + 1;
+        } else {
+          // 如果没找到句子结束符号，向前查找最后一个逗号或分号
+          const lastPunct = Math.max(
+            segment.lastIndexOf('，'),
+            segment.lastIndexOf('；'),
+            segment.lastIndexOf(','),
+            segment.lastIndexOf(';')
+          );
+          
+          if (lastPunct !== -1) {
+            end = start + lastPunct + 1;
+          } else {
+            // 如果连逗号分号都没有，就在500字符处截断（保守处理）
+            end = start + Math.min(500, segment.length);
+          }
         }
-        currentChunk = sentence;
       }
-    }
-    
-    if (currentChunk) {
-      chunks.push(currentChunk);
+      
+      chunks.push(text.slice(start, end));
+      start = end;
     }
     
     return chunks;
@@ -89,14 +118,15 @@ Follow these translation principles:
         setChunks(textChunks.map(chunk => ({
           originalText: chunk,
           translatedText: '',
-          isTranslating: false
+          isTranslating: false,
+          isEditing: false
         })));
       } catch (err) {
-        setError('Error reading file');
+        setError('无法读取文件内容，请确保文件格式正确且未损坏');
         setFile(null);
       }
     } else {
-      setError('Please select a valid .txt file');
+      setError('请选择有效的.txt文本文件');
       setFile(null);
     }
   };
@@ -129,31 +159,62 @@ Follow these translation principles:
         }),
       });
 
-      let data;
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        // 如果响应不是 JSON 格式，直接读取文本
-        const text = await response.text();
-        data = { error: text };
-      }
-      
       if (!response.ok) {
-        throw new Error(data.error || 'Translation failed');
+        throw new Error(`翻译请求失败 (状态码: ${response.status})`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let translatedText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              translatedText += data.content;
+            } catch (e) {
+              throw new Error('翻译响应格式错误，请重试');
+            }
+          }
+        }
+      }
+
+      if (!translatedText.trim()) {
+        throw new Error('翻译结果为空，请重试');
       }
 
       setChunks(prev => prev.map((chunk, idx) => 
         idx === chunkIndex ? {
           ...chunk,
-          translatedText: data.translatedText,
+          translatedText,
           isTranslating: false
         } : chunk
       ));
 
     } catch (err) {
       console.error('Translation error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      let errorMessage = '';
+      
+      if (err instanceof Error) {
+        if (err.message.includes('fetch')) {
+          errorMessage = '网络连接错误，请检查网络连接后重试';
+        } else if (err.message.includes('timeout')) {
+          errorMessage = '请求超时，请重试';
+        } else {
+          errorMessage = err.message;
+        }
+      } else {
+        errorMessage = '发生未知错误，请重试';
+      }
+      
+      setError(errorMessage);
       setChunks(prev => prev.map((chunk, idx) => 
         idx === chunkIndex ? { ...chunk, isTranslating: false } : chunk
       ));
@@ -191,6 +252,24 @@ Follow these translation principles:
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleEditClick = (index: number) => {
+    setChunks(prev => prev.map((chunk, idx) => 
+      idx === index ? { ...chunk, isEditing: true } : chunk
+    ));
+  };
+
+  const handleTranslationChange = (index: number, newText: string) => {
+    setChunks(prev => prev.map((chunk, idx) => 
+      idx === index ? { ...chunk, translatedText: newText } : chunk
+    ));
+  };
+
+  const handleEditComplete = (index: number) => {
+    setChunks(prev => prev.map((chunk, idx) => 
+      idx === index ? { ...chunk, isEditing: false } : chunk
+    ));
   };
 
   return (
@@ -329,44 +408,77 @@ Follow these translation principles:
               </div>
             )}
 
-            {chunks.map((chunk, index) => (
-              <div key={index} className="mb-8 last:mb-0">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-slate-700">
-                    Chunk {index + 1}
-                  </h3>
-                  {chunk.isTranslating && (
-                    <span className="text-xs text-indigo-600">
-                      Translating...
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-4">
-                  <div className="p-4 bg-white/50 rounded-lg border border-slate-200 backdrop-blur-sm">
-                    <p className="text-sm text-slate-600 whitespace-pre-wrap">
-                      {chunk.originalText}
-                    </p>
-                  </div>
-
-                  {chunk.translatedText && (
-                    <div className="p-4 bg-white/50 rounded-lg border border-slate-200 backdrop-blur-sm">
-                      <p className="text-sm text-slate-600 whitespace-pre-wrap">
-                        {chunk.translatedText}
-                      </p>
+            {chunks.length > 0 && (
+              <div className="space-y-6">
+                {chunks.map((chunk, index) => (
+                  <div key={index} className="border rounded-lg p-4 bg-white shadow-sm">
+                    <div className="mb-4">
+                      <h3 className="text-sm font-medium text-gray-500 mb-2">原文：</h3>
+                      <p className="text-gray-700 whitespace-pre-wrap">{chunk.originalText}</p>
                     </div>
-                  )}
-                </div>
-              </div>
-            ))}
+                    
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-sm font-medium text-gray-500">译文：</h3>
+                        <div className="space-x-2">
+                          {!chunk.isEditing ? (
+                            <button
+                              onClick={() => handleEditClick(index)}
+                              className="text-sm text-blue-600 hover:text-blue-800"
+                            >
+                              编辑
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleEditComplete(index)}
+                              className="text-sm text-green-600 hover:text-green-800"
+                            >
+                              完成
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {chunk.isTranslating ? (
+                        <div className="animate-pulse bg-gray-100 h-20 rounded"></div>
+                      ) : chunk.isEditing ? (
+                        <textarea
+                          value={chunk.translatedText}
+                          onChange={(e) => handleTranslationChange(index, e.target.value)}
+                          className="w-full h-32 p-2 border rounded-md focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                        />
+                      ) : (
+                        <p className="text-gray-700 whitespace-pre-wrap">{chunk.translatedText}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
 
-            {file && chunks.length > 0 && (
-              <div className="mt-6 flex justify-end">
+                {/* 下载按钮 */}
                 <button
                   onClick={handleDownload}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                  disabled={chunks.some(chunk => chunk.isTranslating)}
+                  className={`w-full mt-4 py-3 px-6 rounded-md text-white font-medium 
+                    transform transition-all duration-200 ease-in-out
+                    shadow-lg hover:shadow-xl active:scale-95
+                    ${chunks.some(chunk => chunk.isTranslating)
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 hover:from-purple-600 hover:via-indigo-600 hover:to-blue-600 hover:-translate-y-0.5'
+                    }
+                    relative overflow-hidden
+                    before:absolute before:inset-0 
+                    before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent
+                    before:translate-x-[-200%] hover:before:translate-x-[200%]
+                    before:transition-transform before:duration-700
+                    active:before:duration-0
+                  `}
                 >
-                  Download Translation
+                  <span className="relative z-10 flex items-center justify-center">
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    下载翻译结果
+                  </span>
                 </button>
               </div>
             )}
