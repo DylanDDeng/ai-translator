@@ -8,25 +8,33 @@ const QWEN_API_KEY = process.env.QWEN_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const HTTPS_PROXY = process.env.HTTPS_PROXY;
 
-// 验证必要的 API 密钥是否存在
-if (!ANTHROPIC_API_KEY) {
-  throw new Error('ANTHROPIC_API_KEY is not set in environment variables');
-}
-
-if (!QWEN_API_KEY) {
-  throw new Error('QWEN_API_KEY is not set in environment variables');
-}
-
-if (!GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY is not set in environment variables');
-}
-
 const proxyAgent = HTTPS_PROXY ? new HttpsProxyAgent(HTTPS_PROXY) : undefined;
 
 const anthropic = new Anthropic({
   apiKey: ANTHROPIC_API_KEY,
   httpAgent: proxyAgent,
 });
+
+// 检查特定模型的 API 密钥
+function checkApiKey(model: string): void {
+  switch (model) {
+    case 'claude':
+      if (!ANTHROPIC_API_KEY) {
+        throw new Error('ANTHROPIC_API_KEY is not set in environment variables');
+      }
+      break;
+    case 'qwen':
+      if (!QWEN_API_KEY) {
+        throw new Error('QWEN_API_KEY is not set in environment variables');
+      }
+      break;
+    case 'gemini':
+      if (!GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not set in environment variables');
+      }
+      break;
+  }
+}
 
 interface TranslationRequest {
   text: string;
@@ -53,6 +61,7 @@ interface GeminiAPIResponse {
 const API_TIMEOUT = 270000; // 270 秒，给网络延迟和处理时间留出 30 秒的缓冲
 
 async function translateWithClaude(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
+  checkApiKey('claude');
   const claude = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY || '',
     maxRetries: 0, // 禁用自动重试
@@ -121,6 +130,7 @@ async function translateWithClaude(text: string, targetLang: string, systemPromp
 }
 
 async function translateWithQwen(text: string, targetLang: string, systemPrompt: string, context?: { text: string; translation: string; } | null): Promise<string> {
+  checkApiKey('qwen');
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
@@ -205,6 +215,7 @@ async function translateWithQwen(text: string, targetLang: string, systemPrompt:
 }
 
 async function translateWithGemini(text: string, targetLang: string, systemPrompt: string): Promise<string> {
+  checkApiKey('gemini');
   // 创建一个带超时的 AbortController
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
@@ -300,87 +311,54 @@ async function translateWithGemini(text: string, targetLang: string, systemPromp
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, targetLang, model = 'claude-3-sonnet-20240229', systemPrompt, context } = await request.json() as TranslationRequest;
+    const { text, targetLang, systemPrompt, model } = await request.json() as TranslationRequest;
 
-    // Create a new TransformStream for streaming
-    const stream = new TransformStream();
-    const writer = stream.writable.getWriter();
-    const encoder = new TextEncoder();
-
-    // Start the streaming response
-    const response = new NextResponse(stream.readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    });
-
-    // Initialize Anthropic client
-    const anthropic = new Anthropic({
-      apiKey: process.env.CLAUDE_API_KEY,
-    });
-
-    // Prepare the messages array
-    const messages = [];
-    
-    // Add system message if provided
-    if (systemPrompt) {
-      messages.push({ role: 'system', content: systemPrompt });
-    }
-    
-    // Add context if provided
-    if (context) {
-      messages.push({
-        role: 'user',
-        content: `Previous translation example:\nOriginal: ${context.text}\nTranslation: ${context.translation}`
-      });
-      messages.push({
-        role: 'assistant',
-        content: 'I understand the translation style from the example.'
+    // 检查必要的参数
+    if (!text || !targetLang || !model) {
+      return new NextResponse(JSON.stringify({ error: 'Missing required parameters' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
       });
     }
-    
-    // Add the current text to translate
-    messages.push({
-      role: 'user',
-      content: `Translate the following text to ${targetLang}:\n${text}`
-    });
 
-    // Start the streaming request to Claude
-    const stream_response = await anthropic.messages.create({
-      messages: messages,
-      model: model,
-      max_tokens: 1024,
-      stream: true,
-    });
-
-    // Process the stream
-    for await (const chunk of stream_response) {
-      if (chunk.type === 'content_block_delta' && chunk.delta) {
-        let text = '';
-        if (typeof chunk.delta === 'string') {
-          text = chunk.delta;
-        } else if ('text' in chunk.delta) {
-          text = chunk.delta.text;
-        }
-        
-        if (text) {
-          // Write each chunk to the stream
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
-        }
-      }
+    // 检查模型的 API 密钥
+    try {
+      checkApiKey(model);
+    } catch (error) {
+      return new NextResponse(JSON.stringify({ error: error instanceof Error ? error.message : 'API key error' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    // Close the stream
-    await writer.close();
-    return response;
+    // 根据选择的模型调用相应的翻译函数
+    let translatedText;
+    switch (model) {
+      case 'claude':
+        translatedText = await translateWithClaude(text, targetLang, systemPrompt);
+        break;
+      case 'qwen':
+        translatedText = await translateWithQwen(text, targetLang, systemPrompt);
+        break;
+      case 'gemini':
+        translatedText = await translateWithGemini(text, targetLang, systemPrompt);
+        break;
+      default:
+        return new NextResponse(JSON.stringify({ error: 'Unsupported model' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+    }
 
+    return new NextResponse(JSON.stringify({ translatedText }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (error) {
-    console.error('Streaming error:', error);
-    return NextResponse.json(
-      { error: 'An error occurred during translation' },
-      { status: 500 }
-    );
+    console.error('Translation error:', error);
+    return new NextResponse(JSON.stringify({ error: 'Translation failed' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }
