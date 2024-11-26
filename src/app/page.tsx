@@ -3,6 +3,58 @@
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
+// AI Tools data
+const aiTools = [
+  {
+    id: 'translator',
+    name: 'AI Translator',
+    description: 'Translate documents and text using advanced AI models like Claude, Gemini, and more.',
+    icon: '🌐',
+    gradient: 'from-blue-500 via-purple-500 to-pink-500',
+    path: '/translator'
+  },
+  {
+    id: 'summarizer',
+    name: 'AI Summarizer',
+    description: 'Generate concise summaries of long documents and articles using AI.',
+    icon: '📝',
+    gradient: 'from-emerald-500 via-teal-500 to-cyan-500',
+    path: '/summarizer'
+  },
+  {
+    id: 'writer',
+    name: 'AI Writer',
+    description: 'Create high-quality content with AI-powered writing assistance.',
+    icon: '✍️',
+    gradient: 'from-amber-500 via-orange-500 to-red-500',
+    path: '/writer'
+  },
+  {
+    id: 'coder',
+    name: 'AI Coder',
+    description: 'Get coding assistance and code explanations powered by AI.',
+    icon: '👨‍💻',
+    gradient: 'from-indigo-500 via-purple-500 to-pink-500',
+    path: '/coder'
+  },
+  {
+    id: 'assistant',
+    name: 'AI Assistant',
+    description: 'Your personal AI assistant for tasks, questions, and problem-solving.',
+    icon: '🤖',
+    gradient: 'from-green-500 via-teal-500 to-cyan-500',
+    path: '/assistant'
+  },
+  {
+    id: 'image-generator',
+    name: 'AI Image Generator',
+    description: 'Create unique images and artwork using AI models.',
+    icon: '🎨',
+    gradient: 'from-pink-500 via-rose-500 to-red-500',
+    path: '/image-generator'
+  }
+];
+
 export default function Home() {
   const router = useRouter();
 
@@ -21,99 +73,51 @@ export default function Home() {
       <div className="relative">
         {/* Hero Section */}
         <div className="container mx-auto px-4 py-16">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-12">
-            {/* Text Content */}
-            <div className="flex-1 text-center md:text-left">
-              <div className="relative">
-                <div className="absolute -inset-1 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 rounded-lg blur opacity-20"></div>
-                <h1 className="relative text-5xl font-bold bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent mb-6">
-                  AI-Powered Document Translation
-                </h1>
-              </div>
-              <p className="text-xl text-gray-600 mb-8">
-                Translate your documents with advanced AI models. Fast, accurate, and secure.
-              </p>
-              <button
-                onClick={() => router.push('/translator')}
-                className="bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 hover:from-pink-600 hover:via-blue-600 hover:to-purple-600 text-white font-semibold py-3 px-8 rounded-lg text-lg transition-all duration-300 transform hover:scale-105 hover:shadow-lg"
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent mb-6">
+              AI Sandbox
+            </h1>
+            <p className="text-xl text-gray-600">
+              Your ultimate toolbox for AI-powered solutions. Explore our collection of powerful AI tools designed to enhance your productivity.
+            </p>
+          </div>
+
+          {/* Tools Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+            {aiTools.map((tool) => (
+              <div
+                key={tool.id}
+                onClick={() => router.push(tool.path)}
+                className="group cursor-pointer perspective-1000"
               >
-                Start Translating
-              </button>
-            </div>
-            
-            {/* Hero Image */}
-            <div className="flex-1 relative w-full max-w-lg">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 rounded-lg blur opacity-20"></div>
-              <div className="relative w-full h-[400px] bg-white/50 backdrop-blur-sm rounded-lg p-2">
-                <Image
-                  src="/ai-translator.png"
-                  alt="AI Translator Interface"
-                  fill
-                  style={{ objectFit: 'contain' }}
-                  priority
-                  className="drop-shadow-xl"
-                />
+                <div className="relative transform-gpu transition-all duration-500 group-hover:scale-[1.02] group-hover:-translate-y-2">
+                  <div className={`absolute -inset-0.5 rounded-2xl bg-gradient-to-r ${tool.gradient} opacity-70 blur group-hover:opacity-100 transition duration-500`} />
+                  <div className="relative bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl">
+                    <div className="text-4xl mb-4">{tool.icon}</div>
+                    <h3 className={`text-xl font-semibold bg-gradient-to-r ${tool.gradient} bg-clip-text text-transparent mb-3`}>
+                      {tool.name}
+                    </h3>
+                    <p className="text-gray-600">{tool.description}</p>
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* Features Section */}
-        <div className="relative bg-white/60 backdrop-blur-sm py-16">
-          <div className="container mx-auto px-4">
-            <h2 className="text-3xl font-bold text-center mb-12">
+        {/* Bottom Section */}
+        <div className="container mx-auto px-4 py-16 text-center relative">
+          <div className="max-w-2xl mx-auto">
+            <h2 className="text-3xl font-bold mb-6">
               <span className="bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent">
-                Key Features
+                Unlock the Power of AI
               </span>
             </h2>
-            <div className="grid md:grid-cols-3 gap-8">
-              <FeatureCard
-                title="Multiple AI Models"
-                description="Choose from various AI models including Claude, Gemini, and more for optimal translation results."
-                icon="🤖"
-              />
-              <FeatureCard
-                title="Context-Aware"
-                description="Maintains translation consistency with context-aware processing."
-                icon="🔄"
-              />
-              <FeatureCard
-                title="Real-time Translation"
-                description="Experience fast, streaming translations with real-time progress updates."
-                icon="⚡"
-              />
-            </div>
+            <p className="text-gray-600 mb-8">
+              Choose from our collection of AI tools and start exploring the possibilities. Each tool is designed to help you accomplish specific tasks with the power of artificial intelligence.
+            </p>
           </div>
         </div>
-
-        {/* Call to Action */}
-        <div className="container mx-auto px-4 py-16 text-center relative">
-          <div className="absolute -inset-1 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 rounded-lg blur opacity-10"></div>
-          <h2 className="relative text-3xl font-bold mb-6">
-            <span className="bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent">
-              Ready to translate your documents?
-            </span>
-          </h2>
-          <button
-            onClick={() => router.push('/translator')}
-            className="bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 hover:from-pink-600 hover:via-blue-600 hover:to-purple-600 text-white font-semibold py-3 px-8 rounded-lg text-lg transition-all duration-300 transform hover:scale-105 hover:shadow-lg"
-          >
-            Get Started Now
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FeatureCard({ title, description, icon }: { title: string; description: string; icon: string }) {
-  return (
-    <div className="relative group">
-      <div className="absolute -inset-0.5 bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 rounded-lg blur opacity-0 group-hover:opacity-20 transition duration-300"></div>
-      <div className="relative bg-white/50 backdrop-blur-sm p-6 rounded-lg text-center hover:shadow-lg transition-all duration-300 transform hover:scale-105">
-        <div className="text-4xl mb-4">{icon}</div>
-        <h3 className="text-xl font-semibold bg-gradient-to-r from-pink-500 via-blue-500 to-purple-500 bg-clip-text text-transparent mb-2">{title}</h3>
-        <p className="text-gray-600">{description}</p>
       </div>
     </div>
   );
