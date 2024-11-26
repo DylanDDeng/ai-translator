@@ -9,19 +9,38 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
       {/* Hero Section */}
-      <div className="container mx-auto px-4 py-16 text-center">
-        <h1 className="text-5xl font-bold text-gray-900 mb-6">
-          AI-Powered Document Translation
-        </h1>
-        <p className="text-xl text-gray-600 mb-8">
-          Translate your documents with advanced AI models. Fast, accurate, and secure.
-        </p>
-        <button
-          onClick={() => router.push('/translator')}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg text-lg transition-colors duration-200"
-        >
-          Start Translating
-        </button>
+      <div className="container mx-auto px-4 py-16">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-12">
+          {/* Text Content */}
+          <div className="flex-1 text-center md:text-left">
+            <h1 className="text-5xl font-bold text-gray-900 mb-6">
+              AI-Powered Document Translation
+            </h1>
+            <p className="text-xl text-gray-600 mb-8">
+              Translate your documents with advanced AI models. Fast, accurate, and secure.
+            </p>
+            <button
+              onClick={() => router.push('/translator')}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg text-lg transition-colors duration-200"
+            >
+              Start Translating
+            </button>
+          </div>
+          
+          {/* Hero Image */}
+          <div className="flex-1 relative w-full max-w-lg">
+            <div className="relative w-full h-[400px]">
+              <Image
+                src="/ai-translator.png"
+                alt="AI Translator Interface"
+                fill
+                style={{ objectFit: 'contain' }}
+                priority
+                className="drop-shadow-2xl"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Features Section */}
