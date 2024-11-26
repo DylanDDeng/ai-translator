@@ -15,8 +15,8 @@ const aiTools = [
   },
   {
     id: 'summarizer',
-    name: 'AI Summarizer',
-    description: 'Generate concise summaries of long documents and articles using AI.',
+    name: 'AI Extractor',
+    description: 'Extract information from Image using advanced AI models like Gemini, GPT and more',
     icon: '📝',
     gradient: 'from-emerald-500 via-teal-500 to-cyan-500',
     path: '/summarizer'
