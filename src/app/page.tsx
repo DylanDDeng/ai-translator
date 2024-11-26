@@ -59,18 +59,18 @@ export default function Home() {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-[#fafaff] relative overflow-hidden">
+    <div className="min-h-screen bg-[#fafaff] relative overflow-hidden w-full">
       {/* Animated Background Gradients */}
-      <div className="absolute inset-0 bg-gradient-to-br from-pink-100/40 via-blue-100/40 to-purple-100/40" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.3),rgba(255,255,255,0))]" />
-      <div className="absolute top-0 left-0 w-full h-full">
+      <div className="fixed inset-0 bg-gradient-to-br from-pink-100/40 via-blue-100/40 to-purple-100/40" />
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.3),rgba(255,255,255,0))]" />
+      <div className="fixed top-0 left-0 w-full h-full">
         <div className="absolute top-10 left-10 w-72 h-72 bg-pink-200/30 rounded-full mix-blend-multiply filter blur-3xl animate-blob" />
         <div className="absolute top-0 right-20 w-72 h-72 bg-purple-200/30 rounded-full mix-blend-multiply filter blur-3xl animate-blob animation-delay-2000" />
         <div className="absolute bottom-20 left-20 w-72 h-72 bg-blue-200/30 rounded-full mix-blend-multiply filter blur-3xl animate-blob animation-delay-4000" />
       </div>
 
       {/* Content */}
-      <div className="relative">
+      <div className="relative z-10">
         {/* Hero Section */}
         <div className="container mx-auto px-4 py-16">
           <div className="text-center max-w-3xl mx-auto mb-16">

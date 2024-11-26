@@ -273,218 +273,225 @@ Follow these translation principles:
   };
 
   return (
-    <main className="min-h-screen p-8">
-      <div className="max-w-[1920px] mx-8 animate-fade-in">
-        <div className="flex flex-col items-start mb-8">
-          <h1 className="logo-text">Document Translator</h1>
-          <div className="designer-text mt-2">Designed by Chengsheng</div>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-[400px,1fr] gap-8">
-          {/* Left Column - Input Section */}
-          <div className="space-y-6">
-            <div className="input-section rounded-xl p-6 shadow-soft animate-slide-up">
-              <div className="flex flex-col items-center justify-center w-full">
-                <label
-                  htmlFor="file"
-                  className="w-full cursor-pointer"
-                >
-                  <div className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg hover:border-indigo-500 transition-colors">
-                    {file ? (
-                      <div className="text-center">
-                        <p className="text-sm text-slate-600">{file.name}</p>
-                        <p className="text-xs text-slate-500 mt-1">
-                          Click to change file
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="text-center">
-                        <p className="text-sm text-slate-600">
-                          Drop your file here or click to select
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">
-                          Supports .txt files
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </label>
-                <input
-                  type="file"
-                  id="file"
-                  accept=".txt"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-              </div>
-
-              <div className="mt-6 space-y-2">
-                <label className="block text-sm font-medium text-slate-700">
-                  Translation Model
-                </label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="w-full p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm"
-                >
-                  {models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name} - {model.description}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mt-6 space-y-2">
-                <label className="block text-sm font-medium text-slate-700">
-                  Target Language
-                </label>
-                <select
-                  value={targetLang}
-                  onChange={(e) => setTargetLang(e.target.value)}
-                  className="w-full p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm"
-                >
-                  {languages.map((lang) => (
-                    <option key={lang.code} value={lang.code}>
-                      {lang.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mt-6">
-                <button
-                  onClick={handleSubmit}
-                  disabled={!file || isLoading}
-                  className={`w-full px-4 py-2.5 text-white rounded-lg shadow-sm transition-all duration-300 ${
-                    !file || isLoading
-                      ? 'bg-slate-400 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700'
-                  }`}
-                >
-                  {isLoading ? (
-                    <span className="flex items-center justify-center">
-                      <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      Translating...
-                    </span>
-                  ) : (
-                    'Translate'
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* System Prompt Section */}
-            <div className="prompt-section rounded-xl p-6 shadow-soft">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                System Prompt
-              </label>
-              <textarea
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                className="w-full h-[calc(100vh-600px)] min-h-[300px] p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm resize-none"
-              />
-            </div>
+    <div className="min-h-screen bg-[#fafaff] relative overflow-hidden w-full">
+      {/* Background gradients */}
+      <div className="fixed inset-0 bg-gradient-to-br from-pink-100/40 via-blue-100/40 to-purple-100/40" />
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.3),rgba(255,255,255,0))]" />
+      
+      {/* Content */}
+      <div className="relative z-10">
+        <div className="max-w-[1920px] mx-8 animate-fade-in">
+          <div className="flex flex-col items-start mb-8">
+            <h1 className="logo-text">Document Translator</h1>
+            <div className="designer-text mt-2">Designed by Chengsheng</div>
           </div>
-
-          {/* Right Column - Translation Section */}
-          <div className="translation-section rounded-xl p-6 shadow-soft h-[calc(100vh-140px)] overflow-auto custom-scrollbar">
-            {error && (
-              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-red-600">{error}</p>
-              </div>
-            )}
-
-            {chunks.length > 0 && (
-              <div className="space-y-6">
-                {chunks.map((chunk, index) => (
-                  <div key={index} className="border rounded-lg p-4 bg-white shadow-sm">
-                    <div className="mb-4">
-                      <h3 className="text-sm font-medium text-gray-500 mb-2">原文：</h3>
-                      <p className="text-gray-700 whitespace-pre-wrap">{chunk.originalText}</p>
-                    </div>
-                    
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-sm font-medium text-gray-500">译文：</h3>
-                        <div className="space-x-2">
-                          {!chunk.isEditing ? (
-                            <button
-                              onClick={() => handleEditClick(index)}
-                              className="text-sm text-blue-600 hover:text-blue-800"
-                            >
-                              编辑
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleEditComplete(index)}
-                              className="text-sm text-green-600 hover:text-green-800"
-                            >
-                              完成
-                            </button>
-                          )}
+          <div className="grid grid-cols-1 lg:grid-cols-[400px,1fr] gap-8">
+            {/* Left Column - Input Section */}
+            <div className="space-y-6">
+              <div className="input-section rounded-xl p-6 shadow-soft animate-slide-up">
+                <div className="flex flex-col items-center justify-center w-full">
+                  <label
+                    htmlFor="file"
+                    className="w-full cursor-pointer"
+                  >
+                    <div className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg hover:border-indigo-500 transition-colors">
+                      {file ? (
+                        <div className="text-center">
+                          <p className="text-sm text-slate-600">{file.name}</p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Click to change file
+                          </p>
                         </div>
-                      </div>
-                      
-                      {chunk.isTranslating ? (
-                        <div className="animate-pulse bg-gray-100 h-20 rounded"></div>
-                      ) : chunk.isEditing ? (
-                        <textarea
-                          value={chunk.translatedText}
-                          onChange={(e) => handleTranslationChange(index, e.target.value)}
-                          className="w-full h-32 p-2 border rounded-md focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                        />
                       ) : (
-                        <p className="text-gray-700 whitespace-pre-wrap">{chunk.translatedText}</p>
+                        <div className="text-center">
+                          <p className="text-sm text-slate-600">
+                            Drop your file here or click to select
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Supports .txt files
+                          </p>
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  </label>
+                  <input
+                    type="file"
+                    id="file"
+                    accept=".txt"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
 
-                {/* 下载按钮 */}
-                <button
-                  onClick={handleDownload}
-                  disabled={chunks.some(chunk => chunk.isTranslating)}
-                  className={`w-full mt-4 py-3 px-6 rounded-md text-white font-medium 
-                    transform transition-all duration-200 ease-in-out
-                    shadow-lg hover:shadow-xl active:scale-95
-                    ${chunks.some(chunk => chunk.isTranslating)
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 hover:from-purple-600 hover:via-indigo-600 hover:to-blue-600 hover:-translate-y-0.5'
-                    }
-                    relative overflow-hidden
-                    before:absolute before:inset-0 
-                    before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent
-                    before:translate-x-[-200%] hover:before:translate-x-[200%]
-                    before:transition-transform before:duration-700
-                    active:before:duration-0
-                  `}
-                >
-                  <span className="relative z-10 flex items-center justify-center">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    下载翻译结果
-                  </span>
-                </button>
+                <div className="mt-6 space-y-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Translation Model
+                  </label>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="w-full p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm"
+                  >
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name} - {model.description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-6 space-y-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Target Language
+                  </label>
+                  <select
+                    value={targetLang}
+                    onChange={(e) => setTargetLang(e.target.value)}
+                    className="w-full p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm"
+                  >
+                    {languages.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-6">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={!file || isLoading}
+                    className={`w-full px-4 py-2.5 text-white rounded-lg shadow-sm transition-all duration-300 ${
+                      !file || isLoading
+                        ? 'bg-slate-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700'
+                    }`}
+                  >
+                    {isLoading ? (
+                      <span className="flex items-center justify-center">
+                        <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        Translating...
+                      </span>
+                    ) : (
+                      'Translate'
+                    )}
+                  </button>
+                </div>
               </div>
-            )}
+
+              {/* System Prompt Section */}
+              <div className="prompt-section rounded-xl p-6 shadow-soft">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  System Prompt
+                </label>
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  className="w-full h-[calc(100vh-600px)] min-h-[300px] p-2.5 bg-white/50 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar backdrop-blur-sm resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Right Column - Translation Section */}
+            <div className="translation-section rounded-xl p-6 shadow-soft h-[calc(100vh-140px)] overflow-auto custom-scrollbar">
+              {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-red-600">{error}</p>
+                </div>
+              )}
+
+              {chunks.length > 0 && (
+                <div className="space-y-6">
+                  {chunks.map((chunk, index) => (
+                    <div key={index} className="border rounded-lg p-4 bg-white shadow-sm">
+                      <div className="mb-4">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">原文：</h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{chunk.originalText}</p>
+                      </div>
+                      
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <h3 className="text-sm font-medium text-gray-500">译文：</h3>
+                          <div className="space-x-2">
+                            {!chunk.isEditing ? (
+                              <button
+                                onClick={() => handleEditClick(index)}
+                                className="text-sm text-blue-600 hover:text-blue-800"
+                              >
+                                编辑
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleEditComplete(index)}
+                                className="text-sm text-green-600 hover:text-green-800"
+                              >
+                                完成
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {chunk.isTranslating ? (
+                          <div className="animate-pulse bg-gray-100 h-20 rounded"></div>
+                        ) : chunk.isEditing ? (
+                          <textarea
+                            value={chunk.translatedText}
+                            onChange={(e) => handleTranslationChange(index, e.target.value)}
+                            className="w-full h-32 p-2 border rounded-md focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                          />
+                        ) : (
+                          <p className="text-gray-700 whitespace-pre-wrap">{chunk.translatedText}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* 下载按钮 */}
+                  <button
+                    onClick={handleDownload}
+                    disabled={chunks.some(chunk => chunk.isTranslating)}
+                    className={`w-full mt-4 py-3 px-6 rounded-md text-white font-medium 
+                      transform transition-all duration-200 ease-in-out
+                      shadow-lg hover:shadow-xl active:scale-95
+                      ${chunks.some(chunk => chunk.isTranslating)
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 hover:from-purple-600 hover:via-indigo-600 hover:to-blue-600 hover:-translate-y-0.5'
+                      }
+                      relative overflow-hidden
+                      before:absolute before:inset-0 
+                      before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent
+                      before:translate-x-[-200%] hover:before:translate-x-[200%]
+                      before:transition-transform before:duration-700
+                      active:before:duration-0
+                    `}
+                  >
+                    <span className="relative z-10 flex items-center justify-center">
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                      </svg>
+                      下载翻译结果
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
