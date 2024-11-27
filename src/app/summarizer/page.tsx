@@ -22,19 +22,56 @@ export default function ImageToText() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string>(AVAILABLE_MODELS[0].id)
+  const [isDragging, setIsDragging] = useState(false)
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (file: File) => {
+    setImage(file)
+    setError(null)
+
+    // Create image preview
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      setImagePreview(e.target?.result as string)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setImage(file)
-      setError(null)
+      handleImageUpload(e.target.files[0])
+    }
+  }
 
-      // Create image preview
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string)
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const files = e.dataTransfer.files
+    if (files && files[0]) {
+      const file = files[0]
+      if (file.type.startsWith('image/')) {
+        handleImageUpload(file)
+      } else {
+        setError('Please drop an image file')
       }
-      reader.readAsDataURL(file)
     }
   }
 
@@ -134,22 +171,25 @@ export default function ImageToText() {
             <Card className="backdrop-blur-sm bg-white/80 shadow-lg hover:shadow-xl transition-shadow duration-300 border-0 ring-1 ring-black/5">
               <CardContent className="p-6 space-y-6">
                 {/* 模型选择 */}
-                <div className="space-y-2">
-                  <label htmlFor="model-select" className="block text-sm font-medium text-gray-700">
+                <div className="space-y-3 mb-6">
+                  <h3 className="text-xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 via-pink-500 to-indigo-600 animate-gradient">
                     AI Model
-                  </label>
+                  </h3>
                   <select
                     id="model-select"
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full px-4 py-2.5 text-sm bg-white/50 backdrop-blur-sm border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200"
+                    className="w-full px-4 py-2.5 text-sm bg-white/80 backdrop-blur-sm border border-gray-200 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200"
                   >
                     {AVAILABLE_MODELS.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name} ({model.provider})
+                      <option key={model.id} value={model.id} className="py-2">
+                        {model.name}
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-gray-500">
+                    Select an AI model for text extraction. Different models may have varying capabilities and processing speeds.
+                  </p>
                 </div>
 
                 {/* 文件上传区域 */}
@@ -158,16 +198,24 @@ export default function ImageToText() {
                     <Input
                       type="file"
                       accept="image/*"
-                      onChange={handleImageUpload}
+                      onChange={handleFileInput}
                       className="hidden"
                       id="file-upload"
                     />
                     <label
                       htmlFor="file-upload"
-                      className="flex flex-col items-center justify-center w-full h-32 px-4 transition bg-white/50 border-2 border-gray-200 border-dashed rounded-lg cursor-pointer hover:bg-gray-50/50 hover:border-purple-500"
+                      className={`flex flex-col items-center justify-center w-full h-32 px-4 transition bg-white/50 border-2 ${
+                        isDragging 
+                          ? 'border-purple-500 bg-purple-50/50' 
+                          : 'border-gray-200 hover:bg-gray-50/50 hover:border-purple-500'
+                      } border-dashed rounded-lg cursor-pointer`}
+                      onDragEnter={handleDragEnter}
+                      onDragLeave={handleDragLeave}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
                     >
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <Upload className="w-8 h-8 mb-3 text-gray-400" />
+                        <Upload className={`w-8 h-8 mb-3 ${isDragging ? 'text-purple-500' : 'text-gray-400'}`} />
                         <p className="mb-2 text-sm text-gray-500">
                           <span className="font-semibold">Click to upload</span> or drag and drop
                         </p>
@@ -227,7 +275,9 @@ export default function ImageToText() {
             <Card className="backdrop-blur-sm bg-white/80 shadow-lg hover:shadow-xl transition-shadow duration-300 border-0 ring-1 ring-black/5">
               <CardContent className="p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">Extracted Text</h3>
+                  <h3 className="text-xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 via-pink-500 to-indigo-600 animate-gradient">
+                    Extracted Text
+                  </h3>
                   {extractedText && (
                     <Button
                       onClick={handleDownload}
