@@ -22,20 +22,20 @@ const aiTools = [
     path: '/summarizer'
   },
   {
+    id: 'coder',
+    name: 'AI Coder',
+    description: 'Generate code snippets and solutions using AI assistance.',
+    icon: '💻',
+    gradient: 'from-yellow-500 via-orange-500 to-red-500',
+    path: '/coder'
+  },
+  {
     id: 'writer',
     name: 'AI Writer',
     description: 'Create high-quality content with AI-powered writing assistance.',
     icon: '✍️',
     gradient: 'from-amber-500 via-orange-500 to-red-500',
     path: '/writer'
-  },
-  {
-    id: 'coder',
-    name: 'AI Coder',
-    description: 'Get coding assistance and code explanations powered by AI.',
-    icon: '👨‍💻',
-    gradient: 'from-indigo-500 via-purple-500 to-pink-500',
-    path: '/coder'
   },
   {
     id: 'assistant',
