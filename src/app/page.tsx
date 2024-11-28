@@ -31,9 +31,9 @@ const aiTools = [
   },
   {
     id: 'writer',
-    name: 'AI Writer',
-    description: 'Create high-quality content with AI-powered writing assistance.',
-    icon: '✍️',
+    name: 'Word Learner',
+    description: 'Master English vocabulary with AI-powered word analysis, examples, and memory tips.',
+    icon: '📚',
     gradient: 'from-amber-500 via-orange-500 to-red-500',
     path: '/writer'
   },
