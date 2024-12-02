@@ -162,23 +162,23 @@ export async function POST(request: NextRequest) {
       
       'if [ "$http_code" != "200" ]; then',
       '  echo "Error: Non-200 status code received"',
-      '  echo "$body" > ${path.join(tempDir, 'error.txt')}',
+      `  echo "$body" > "${path.join(tempDir, "error.txt")}"`,
       '  exit 1',
       'fi',
       
-      'echo "$body" > ${path.join(tempDir, 'response.json')}',
+      `echo "$body" > "${path.join(tempDir, "response.json")}"`,
       
-      'if ! jq empty ${path.join(tempDir, 'response.json')} 2>/dev/null; then',
+      `if ! jq empty "${path.join(tempDir, "response.json")}" 2>/dev/null; then`,
       '  echo "Response is not valid JSON"',
-      '  cat ${path.join(tempDir, 'response.json')}',
+      `  cat "${path.join(tempDir, "response.json")}"`,
       '  exit 1',
       'fi',
       
       'echo "API 响应："',
-      `cat ${path.join(tempDir, 'response.json')}`,
+      `cat "${path.join(tempDir, "response.json")}"`,
       
       'echo "结果："',
-      `jq -r ".candidates[].content.parts[].text" ${path.join(tempDir, 'response.json')} 2>/dev/null || cat ${path.join(tempDir, 'response.json')}`
+      `jq -r ".candidates[].content.parts[].text" "${path.join(tempDir, "response.json")}" 2>/dev/null || cat "${path.join(tempDir, "response.json")}"`
     ];
 
     // 执行命令
