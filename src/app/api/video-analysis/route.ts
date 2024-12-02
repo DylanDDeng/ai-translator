@@ -8,6 +8,38 @@ import os from 'os';
 const execAsync = promisify(exec);
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const BASE_URL = 'https://generativelanguage.googleapis.com';
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 5000; // 5 seconds
+
+// 添加延迟函数
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 添加重试函数
+async function retryOperation<T>(
+  operation: () => Promise<T>,
+  maxRetries: number,
+  delayMs: number,
+  operationName: string
+): Promise<T> {
+  let lastError;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      console.log(`${operationName} failed (attempt ${i + 1}/${maxRetries}):`, error.message);
+      
+      // 检查是否是速率限制错误
+      if (error.message?.includes('rate limit exceeded')) {
+        console.log('Rate limit exceeded, waiting longer...');
+        await delay(delayMs * 2); // 速率限制错误等待更长时间
+      } else {
+        await delay(delayMs);
+      }
+    }
+  }
+  throw lastError;
+}
 
 export async function POST(request: NextRequest) {
   let tempDir = '';
@@ -113,21 +145,33 @@ export async function POST(request: NextRequest) {
       
       // 生成内容描述
       'echo "生成内容描述..."',
-      `curl "${BASE_URL}/v1beta/models/gemini-1.5-pro:generateContent?key=${GOOGLE_API_KEY}" \\
+      `response=$(curl -s "${BASE_URL}/v1beta/models/gemini-1.5-pro:generateContent?key=${GOOGLE_API_KEY}" \\
         -H 'Content-Type: application/json' \\
         -X POST \\
-        --data-binary "@${requestConfigPath}" > ${path.join(tempDir, 'response.json')}`,
+        --data-binary "@${requestConfigPath}")`,
       
       'echo "API 响应："',
-      `cat ${path.join(tempDir, 'response.json')}`,
+      'echo "$response" > ${path.join(tempDir, "response.json")}',
+      'echo "$response"',
       
-      'echo "结果："',
-      `jq -r ".candidates[].content.parts[].text" ${path.join(tempDir, 'response.json')} || cat ${path.join(tempDir, 'response.json')}`
+      'echo "检查响应格式..."',
+      'if echo "$response" | jq -e . >/dev/null 2>&1; then',
+      '  echo "响应是有效的 JSON"',
+      '  echo "$response" | jq -r ".candidates[].content.parts[].text" || echo "$response"',
+      'else',
+      '  echo "警告：响应不是有效的 JSON 格式"',
+      '  echo "$response"',
+      'fi'
     ];
 
     // 执行命令
     console.log('Executing commands...');
-    const { stdout, stderr } = await execAsync(commands.join('\n'), { shell: '/bin/bash' });
+    const { stdout, stderr } = await retryOperation(
+      async () => await execAsync(commands.join('\n'), { shell: '/bin/bash' }),
+      MAX_RETRIES,
+      RETRY_DELAY,
+      'Executing commands'
+    );
     console.log('Command output:', stdout);
     if (stderr) console.error('Command errors:', stderr);
 
@@ -138,20 +182,45 @@ export async function POST(request: NextRequest) {
     
     let response;
     try {
+      // 检查响应是否为空或无效
+      if (!responseJson || responseJson.trim() === '') {
+        throw new Error('Empty response from API');
+      }
+
+      // 检查是否是错误消息
+      if (responseJson.startsWith('Request')) {
+        throw new Error(responseJson);
+      }
+
       response = JSON.parse(responseJson);
       console.log('Parsed response:', response);
       
       // 检查是否有错误响应
       if (response.error) {
-        throw new Error(response.error.message || 'API returned an error');
+        const errorMessage = response.error.message || 'API returned an error';
+        if (errorMessage.includes('rate limit exceeded')) {
+          throw new Error('API rate limit exceeded. Please try again in a few minutes.');
+        }
+        throw new Error(errorMessage);
       }
       
       // 如果没有candidates，也抛出错误
       if (!response.candidates || response.candidates.length === 0) {
         throw new Error('No analysis results returned from the API');
       }
+
+      // 确保返回的是正确格式的响应
+      if (!response.candidates[0]?.content?.parts) {
+        throw new Error('Invalid response format from API');
+      }
     } catch (e) {
       console.error('Error parsing response:', e);
+      if (e.message.includes('rate limit exceeded')) {
+        return NextResponse.json(
+          { error: 'API rate limit exceeded. Please try again in a few minutes.' },
+          { status: 429 }
+        );
+      }
       throw e;
     }
 
