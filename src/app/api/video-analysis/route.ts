@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { put } from '@vercel/blob';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -17,51 +18,45 @@ const MAX_FILE_SIZE = parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE || '5000000
 
 export async function POST(request: NextRequest) {
   let tempDir = '';
-  let tempFilePath = '';
-  
+  let blobUrl = '';
   try {
+    const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
+    if (contentLength > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: 'File size exceeds 50MB limit' },
+        { status: 413 }
+      );
+    }
+
     const formData = await request.formData();
-    const chunk = formData.get('file') as File;
-    const chunkIndex = parseInt(formData.get('chunk') as string, 10);
-    const totalChunks = parseInt(formData.get('chunks') as string, 10);
+    const file = formData.get('file') as File;
     let prompt = formData.get('prompt') as string || '请用中文描述这个视频片段';
-
-    if (!chunk) {
-      return NextResponse.json({ error: 'No file chunk provided' }, { status: 400 });
+    
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // 创建临时目录
-    if (chunkIndex === 0) {
-      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'video-analysis-'));
-      tempFilePath = path.join(tempDir, chunk.name);
-    } else {
-      // 使用已存在的临时目录
-      const tempDirs = await fs.readdir(os.tmpdir());
-      const videoDir = tempDirs.find(dir => dir.startsWith('video-analysis-'));
-      if (!videoDir) {
-        return NextResponse.json({ error: 'Temporary directory not found' }, { status: 400 });
-      }
-      tempDir = path.join(os.tmpdir(), videoDir);
-      tempFilePath = path.join(tempDir, chunk.name);
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: 'File size exceeds 50MB limit' }, { status: 413 });
     }
 
-    // 将分块写入文件
-    const buffer = Buffer.from(await chunk.arrayBuffer());
-    const flags = chunkIndex === 0 ? 'w' : 'a';
-    await fs.writeFile(tempFilePath, buffer, { flag: flags });
-
-    // 如果不是最后一个分块，返回成功状态
-    if (chunkIndex < totalChunks - 1) {
-      return NextResponse.json({ 
-        status: 'chunk_uploaded',
-        message: `Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully`
-      });
+    if (!GOOGLE_API_KEY) {
+      return NextResponse.json({ error: 'GOOGLE_API_KEY is not configured' }, { status: 500 });
     }
 
     // 检查文件类型
-    if (chunk.type !== 'video/mp4') {
+    if (file.type !== 'video/mp4') {
       return NextResponse.json({ error: 'Only MP4 videos are supported' }, { status: 400 });
     }
+
+    // 上传到 Vercel Blob
+    console.log('Uploading to Vercel Blob...');
+    const blob = await put(file.name, file, {
+      access: 'public',
+      addRandomSuffix: true
+    });
+    blobUrl = blob.url;
+    console.log('File uploaded to:', blobUrl);
 
     // 处理 prompt 中的特殊字符
     prompt = prompt.replace(/'/g, "'\\''");  // 转义单引号
@@ -70,9 +65,13 @@ export async function POST(request: NextRequest) {
     prompt = prompt.replace(/\r/g, '');      // 移除回车符
 
     console.log('Starting video analysis with prompt:', prompt);
-    console.log('File path:', tempFilePath);
-    console.log('File size:', chunk.size);
-    console.log('File type:', chunk.type);
+    console.log('File name:', file.name);
+    console.log('File size:', file.size);
+    console.log('File type:', file.type);
+
+    // 创建临时目录来存储响应
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'video-analysis-'));
+    console.log('Created temp directory:', tempDir);
 
     // 创建请求配置文件
     const requestConfigPath = path.join(tempDir, 'request.json');
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
       contents: [{
         parts: [
           { text: prompt },
-          { file_data: { mime_type: "video/mp4", file_uri: "PLACEHOLDER_URI" } }
+          { file_data: { mime_type: "video/mp4", file_uri: blobUrl } }
         ]
       }]
     };
@@ -93,97 +92,23 @@ export async function POST(request: NextRequest) {
       // 设置代理（仅在非生产环境）
       proxyCommand,
       
-      // 获取文件信息
-      'MIME_TYPE="video/mp4"',
-      `NUM_BYTES=$(wc -c < "${tempFilePath}")`,
-      `DISPLAY_NAME="${chunk.name}"`,
-      
-      // 初始化上传请求
-      'echo "上传视频中..."',
-      `curl -s "${BASE_URL}/upload/v1beta/files?key=${GOOGLE_API_KEY}" \\
-        -D ${path.join(tempDir, 'upload-header.tmp')} \\
-        -H "X-Goog-Upload-Protocol: resumable" \\
-        -H "X-Goog-Upload-Command: start" \\
-        -H "X-Goog-Upload-Header-Content-Length: \${NUM_BYTES}" \\
-        -H "X-Goog-Upload-Header-Content-Type: \${MIME_TYPE}" \\
-        -H "Content-Type: application/json" \\
-        -d "{\\"file\\": {\\"display_name\\": \\"\${DISPLAY_NAME}\\"}}"`,
-      
-      // 获取上传 URL
-      'echo "获取上传 URL..."',
-      `upload_url=$(grep -i "x-goog-upload-url: " ${path.join(tempDir, 'upload-header.tmp')} | cut -d" " -f2 | tr -d "\\r")`,
-      'echo "Upload URL: ${upload_url}"',
-      
-      // 上传文件
-      'echo "开始传输文件..."',
-      `curl -s "\${upload_url}" \\
-        -H "Content-Length: \${NUM_BYTES}" \\
-        -H "X-Goog-Upload-Offset: 0" \\
-        -H "X-Goog-Upload-Command: upload, finalize" \\
-        --data-binary "@${tempFilePath}" > ${path.join(tempDir, 'file_info.json')}`,
-      
-      // 获取文件信息
-      'echo "获取文件信息..."',
-      `cat ${path.join(tempDir, 'file_info.json')}`,
-      `file_uri=$(jq -r ".file.uri" ${path.join(tempDir, 'file_info.json')})`,
-      `state=$(jq -r ".file.state" ${path.join(tempDir, 'file_info.json')})`,
-      `name=$(jq -r ".file.name" ${path.join(tempDir, 'file_info.json')})`,
-      
-      'echo "文件 URI: ${file_uri}"',
-      'echo "状态: ${state}"',
-      
-      // 等待处理完成
-      'echo "等待处理完成..."',
-      `while [[ "\${state}" == *"PROCESSING"* ]]; do
-        echo "处理中..."
-        sleep 5
-        curl -s "${BASE_URL}/v1beta/files/\${name}?key=${GOOGLE_API_KEY}" > ${path.join(tempDir, 'file_info.json')}
-        state=$(jq -r ".file.state" ${path.join(tempDir, 'file_info.json')})
-      done`,
-      
-      // 更新请求配置文件中的 URI
-      `sed -i '' "s|PLACEHOLDER_URI|\${file_uri}|" ${requestConfigPath}`,
-      
-      // 验证请求配置文件
-      'echo "验证请求配置..."',
-      `cat ${requestConfigPath}`,
-      `if ! jq empty ${requestConfigPath} 2>/dev/null; then
-        echo "请求配置验证失败"
-        exit 1
-      fi`,
-      
       // 生成内容描述
       'echo "生成内容描述..."',
-      `response=$(curl -s -w "\\n%{http_code}" "${BASE_URL}/v1beta/models/gemini-1.5-pro:generateContent?key=${GOOGLE_API_KEY}" \\
+      `curl -s "${BASE_URL}/v1beta/models/gemini-1.5-pro:generateContent?key=${GOOGLE_API_KEY}" \\
         -H 'Content-Type: application/json' \\
         -X POST \\
-        --data-binary "@${requestConfigPath}")`,
-      
-      'http_code=$(echo "$response" | tail -n1)',
-      'body=$(echo "$response" | sed "$ d")',
-      
-      'echo "HTTP Status Code: $http_code"',
-      'echo "Response Body: $body"',
-      
-      'if [ "$http_code" != "200" ]; then',
-      '  echo "Error: Non-200 status code received"',
-      `  echo "$body" > "${path.join(tempDir, "error.txt")}"`,
-      '  exit 1',
-      'fi',
-      
-      `echo "$body" > "${path.join(tempDir, "response.json")}"`,
-      
-      `if ! jq empty "${path.join(tempDir, "response.json")}" 2>/dev/null; then`,
-      '  echo "Response is not valid JSON"',
-      `  cat "${path.join(tempDir, "response.json")}"`,
-      '  exit 1',
-      'fi',
+        --data-binary "@${requestConfigPath}" > ${path.join(tempDir, 'response.json')}`,
       
       'echo "API 响应："',
-      `cat "${path.join(tempDir, "response.json")}"`,
+      `if ! jq empty ${path.join(tempDir, 'response.json')} 2>/dev/null; then
+        echo "响应不是有效的 JSON"
+        cat ${path.join(tempDir, 'response.json')}
+        exit 1
+      fi`,
+      `cat ${path.join(tempDir, 'response.json')}`,
       
       'echo "结果："',
-      `jq -r ".candidates[].content.parts[].text" "${path.join(tempDir, "response.json")}" 2>/dev/null || cat "${path.join(tempDir, "response.json")}"`
+      `jq -r ".candidates[].content.parts[].text" ${path.join(tempDir, 'response.json')} 2>/dev/null || cat ${path.join(tempDir, 'response.json')}`
     ];
 
     // 执行命令
@@ -195,26 +120,10 @@ export async function POST(request: NextRequest) {
     console.log('Command output:', stdout);
     if (stderr) console.error('Command errors:', stderr);
 
-    // 检查是否有错误文件
-    try {
-      await fs.access(path.join(tempDir, 'error.txt'));
-      const errorMessage = await fs.readFile(path.join(tempDir, 'error.txt'), 'utf-8');
-      console.error('Error from API:', errorMessage);
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
-    } catch (e) {
-      // error.txt 不存在，继续处理
-    }
-
     // 读取结果
     console.log('Reading response file...');
-    let responseJson;
-    try {
-      responseJson = await fs.readFile(path.join(tempDir, 'response.json'), 'utf-8');
-      console.log('Response JSON:', responseJson);
-    } catch (e) {
-      console.error('Error reading response file:', e);
-      return NextResponse.json({ error: 'Failed to read response file' }, { status: 500 });
-    }
+    const responseJson = await fs.readFile(path.join(tempDir, 'response.json'), 'utf-8');
+    console.log('Response JSON:', responseJson);
     
     let response;
     try {
@@ -230,6 +139,9 @@ export async function POST(request: NextRequest) {
       if (!response.candidates || response.candidates.length === 0) {
         throw new Error('No analysis results returned from the API');
       }
+
+      // 添加视频 URL 到响应中
+      response.videoUrl = blobUrl;
     } catch (e) {
       console.error('Error parsing response:', e);
       throw e;
