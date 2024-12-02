@@ -17,33 +17,49 @@ const MAX_FILE_SIZE = parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE || '5000000
 
 export async function POST(request: NextRequest) {
   let tempDir = '';
+  let tempFilePath = '';
+  
   try {
-    const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
-    if (contentLength > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: 'File size exceeds 50MB limit' },
-        { status: 413 }
-      );
-    }
-
     const formData = await request.formData();
-    const file = formData.get('file') as File;
+    const chunk = formData.get('file') as File;
+    const chunkIndex = parseInt(formData.get('chunk') as string, 10);
+    const totalChunks = parseInt(formData.get('chunks') as string, 10);
     let prompt = formData.get('prompt') as string || '请用中文描述这个视频片段';
-    
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+
+    if (!chunk) {
+      return NextResponse.json({ error: 'No file chunk provided' }, { status: 400 });
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'File size exceeds 50MB limit' }, { status: 413 });
+    // 创建临时目录
+    if (chunkIndex === 0) {
+      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'video-analysis-'));
+      tempFilePath = path.join(tempDir, chunk.name);
+    } else {
+      // 使用已存在的临时目录
+      const tempDirs = await fs.readdir(os.tmpdir());
+      const videoDir = tempDirs.find(dir => dir.startsWith('video-analysis-'));
+      if (!videoDir) {
+        return NextResponse.json({ error: 'Temporary directory not found' }, { status: 400 });
+      }
+      tempDir = path.join(os.tmpdir(), videoDir);
+      tempFilePath = path.join(tempDir, chunk.name);
     }
 
-    if (!GOOGLE_API_KEY) {
-      return NextResponse.json({ error: 'GOOGLE_API_KEY is not configured' }, { status: 500 });
+    // 将分块写入文件
+    const buffer = Buffer.from(await chunk.arrayBuffer());
+    const flags = chunkIndex === 0 ? 'w' : 'a';
+    await fs.writeFile(tempFilePath, buffer, { flag: flags });
+
+    // 如果不是最后一个分块，返回成功状态
+    if (chunkIndex < totalChunks - 1) {
+      return NextResponse.json({ 
+        status: 'chunk_uploaded',
+        message: `Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully`
+      });
     }
 
     // 检查文件类型
-    if (file.type !== 'video/mp4') {
+    if (chunk.type !== 'video/mp4') {
       return NextResponse.json({ error: 'Only MP4 videos are supported' }, { status: 400 });
     }
 
@@ -54,20 +70,9 @@ export async function POST(request: NextRequest) {
     prompt = prompt.replace(/\r/g, '');      // 移除回车符
 
     console.log('Starting video analysis with prompt:', prompt);
-    console.log('File name:', file.name);
-    console.log('File size:', file.size);
-    console.log('File type:', file.type);
-
-    // 创建临时目录来存储文件和响应
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'video-analysis-'));
-    console.log('Created temp directory:', tempDir);
-    
-    const videoPath = path.join(tempDir, file.name);
-    
-    // 将上传的文件写入临时文件
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(videoPath, buffer);
-    console.log('Wrote file to temp directory:', videoPath);
+    console.log('File path:', tempFilePath);
+    console.log('File size:', chunk.size);
+    console.log('File type:', chunk.type);
 
     // 创建请求配置文件
     const requestConfigPath = path.join(tempDir, 'request.json');
@@ -90,8 +95,8 @@ export async function POST(request: NextRequest) {
       
       // 获取文件信息
       'MIME_TYPE="video/mp4"',
-      `NUM_BYTES=$(wc -c < "${videoPath}")`,
-      `DISPLAY_NAME="${file.name}"`,
+      `NUM_BYTES=$(wc -c < "${tempFilePath}")`,
+      `DISPLAY_NAME="${chunk.name}"`,
       
       // 初始化上传请求
       'echo "上传视频中..."',
@@ -115,7 +120,7 @@ export async function POST(request: NextRequest) {
         -H "Content-Length: \${NUM_BYTES}" \\
         -H "X-Goog-Upload-Offset: 0" \\
         -H "X-Goog-Upload-Command: upload, finalize" \\
-        --data-binary "@${videoPath}" > ${path.join(tempDir, 'file_info.json')}`,
+        --data-binary "@${tempFilePath}" > ${path.join(tempDir, 'file_info.json')}`,
       
       // 获取文件信息
       'echo "获取文件信息..."',
