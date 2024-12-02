@@ -17,8 +17,5 @@
         }
       ]
     }
-  ],
-  "bodyParser": {
-    "sizeLimit": "50mb"
-  }
+  ]
 }

@@ -14,9 +14,18 @@ const nextConfig = {
     ]
   },
   experimental: {
-    serverActions: {
-      bodySizeLimit: '50mb'
-    }
+    serverActions: true,
+    serverComponentsExternalPackages: ['sharp', 'onnxruntime-node'],
+  },
+  webpack: (config) => {
+    config.externals = [...config.externals, 'sharp', 'onnxruntime-node'];
+    return config;
+  },
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+    responseLimit: '50mb',
   }
 }
 
