@@ -38,6 +38,14 @@ const aiTools = [
     path: '/writer'
   },
   {
+    id: 'doc-chat',
+    name: 'Document Chat',
+    description: 'Upload PDF documents and have interactive conversations about their contents with AI.',
+    icon: '🤖',
+    gradient: 'from-indigo-500 via-purple-500 to-pink-500',
+    path: '/doc-chat'
+  },
+  {
     id: 'extractor',
     name: 'Web Extractor',
     description: 'Extract and summarize content from any webpage using AI technology.',
@@ -60,6 +68,14 @@ const aiTools = [
     icon: '🎨',
     gradient: 'from-pink-500 via-rose-500 to-red-500',
     path: '/image-generator'
+  },
+  {
+    id: 'video-analysis',
+    name: 'Video Analysis',
+    description: 'Upload and analyze videos using advanced AI models for detailed content understanding.',
+    icon: '🎥',
+    gradient: 'from-blue-500 via-indigo-500 to-purple-500',
+    path: '/video-analysis'
   }
 ];
 
