@@ -149,17 +149,32 @@ export async function POST(request: NextRequest) {
       
       // 生成内容描述
       'echo "生成内容描述..."',
-      `curl -s "${BASE_URL}/v1beta/models/gemini-1.5-pro:generateContent?key=${GOOGLE_API_KEY}" \\
+      `response=$(curl -s -w "\\n%{http_code}" "${BASE_URL}/v1beta/models/gemini-1.5-pro:generateContent?key=${GOOGLE_API_KEY}" \\
         -H 'Content-Type: application/json' \\
         -X POST \\
-        --data-binary "@${requestConfigPath}" > ${path.join(tempDir, 'response.json')}`,
+        --data-binary "@${requestConfigPath}")`,
+      
+      'http_code=$(echo "$response" | tail -n1)',
+      'body=$(echo "$response" | sed "$ d")',
+      
+      'echo "HTTP Status Code: $http_code"',
+      'echo "Response Body: $body"',
+      
+      'if [ "$http_code" != "200" ]; then',
+      '  echo "Error: Non-200 status code received"',
+      '  echo "$body" > ${path.join(tempDir, 'error.txt')}',
+      '  exit 1',
+      'fi',
+      
+      'echo "$body" > ${path.join(tempDir, 'response.json')}',
+      
+      'if ! jq empty ${path.join(tempDir, 'response.json')} 2>/dev/null; then',
+      '  echo "Response is not valid JSON"',
+      '  cat ${path.join(tempDir, 'response.json')}',
+      '  exit 1',
+      'fi',
       
       'echo "API 响应："',
-      `if ! jq empty ${path.join(tempDir, 'response.json')} 2>/dev/null; then
-        echo "响应不是有效的 JSON"
-        cat ${path.join(tempDir, 'response.json')}
-        exit 1
-      fi`,
       `cat ${path.join(tempDir, 'response.json')}`,
       
       'echo "结果："',
@@ -175,10 +190,26 @@ export async function POST(request: NextRequest) {
     console.log('Command output:', stdout);
     if (stderr) console.error('Command errors:', stderr);
 
+    // 检查是否有错误文件
+    try {
+      await fs.access(path.join(tempDir, 'error.txt'));
+      const errorMessage = await fs.readFile(path.join(tempDir, 'error.txt'), 'utf-8');
+      console.error('Error from API:', errorMessage);
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    } catch (e) {
+      // error.txt 不存在，继续处理
+    }
+
     // 读取结果
     console.log('Reading response file...');
-    const responseJson = await fs.readFile(path.join(tempDir, 'response.json'), 'utf-8');
-    console.log('Response JSON:', responseJson);
+    let responseJson;
+    try {
+      responseJson = await fs.readFile(path.join(tempDir, 'response.json'), 'utf-8');
+      console.log('Response JSON:', responseJson);
+    } catch (e) {
+      console.error('Error reading response file:', e);
+      return NextResponse.json({ error: 'Failed to read response file' }, { status: 500 });
+    }
     
     let response;
     try {
