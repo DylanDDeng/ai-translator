@@ -145,22 +145,39 @@ export async function POST(request: NextRequest) {
       
       // 生成内容描述
       'echo "生成内容描述..."',
-      `response=$(curl -s "${BASE_URL}/v1beta/models/gemini-1.5-pro:generateContent?key=${GOOGLE_API_KEY}" \\
+      `response=$(curl -s -w "\\n%{http_code}" "${BASE_URL}/v1beta/models/gemini-1.5-pro:generateContent?key=${GOOGLE_API_KEY}" \\
         -H 'Content-Type: application/json' \\
         -X POST \\
         --data-binary "@${requestConfigPath}")`,
       
       'echo "API 响应："',
-      'echo "$response" > ${path.join(tempDir, "response.json")}',
-      'echo "$response"',
+      
+      // 分离响应内容和状态码
+      'http_code=$(echo "$response" | tail -n1)',
+      'content=$(echo "$response" | sed "$ d")',
+      
+      'echo "HTTP 状态码: $http_code"',
+      'echo "响应内容:"',
+      'echo "$content"',
+      
+      // 检查 HTTP 状态码
+      'if [ "$http_code" != "200" ]; then',
+      '  echo "API 返回错误状态码: $http_code"',
+      '  echo "$content" > ${path.join(tempDir, "error.txt")}',
+      '  exit 1',
+      'fi',
+      
+      // 保存响应内容
+      'echo "$content" > ${path.join(tempDir, "response.json")}',
       
       'echo "检查响应格式..."',
-      'if echo "$response" | jq -e . >/dev/null 2>&1; then',
+      'if echo "$content" | jq -e . >/dev/null 2>&1; then',
       '  echo "响应是有效的 JSON"',
-      '  echo "$response" | jq -r ".candidates[].content.parts[].text" || echo "$response"',
+      '  echo "$content" | jq -r ".candidates[].content.parts[].text" || echo "$content"',
       'else',
       '  echo "警告：响应不是有效的 JSON 格式"',
-      '  echo "$response"',
+      '  echo "$content" > ${path.join(tempDir, "error.txt")}',
+      '  exit 1',
       'fi'
     ];
 
@@ -177,29 +194,65 @@ export async function POST(request: NextRequest) {
 
     // 读取结果
     console.log('Reading response file...');
-    const responseJson = await fs.readFile(path.join(tempDir, 'response.json'), 'utf-8');
-    console.log('Response JSON:', responseJson);
+    let responseContent;
+    try {
+      responseContent = await fs.readFile(path.join(tempDir, 'response.json'), 'utf-8');
+    } catch (e) {
+      // 如果 response.json 不存在，尝试读取 error.txt
+      try {
+        const errorContent = await fs.readFile(path.join(tempDir, 'error.txt'), 'utf-8');
+        console.error('Error content:', errorContent);
+        
+        // 处理常见的错误消息
+        if (errorContent.includes('Request Entity Too Large')) {
+          return NextResponse.json(
+            { error: '视频文件太大，请上传小于 4MB 的视频' },
+            { status: 413 }
+          );
+        }
+        if (errorContent.includes('rate limit exceeded')) {
+          return NextResponse.json(
+            { error: 'API 调用次数超限，请稍后再试' },
+            { status: 429 }
+          );
+        }
+        if (errorContent.includes('Request failed')) {
+          return NextResponse.json(
+            { error: '请求失败，请检查网络连接后重试' },
+            { status: 500 }
+          );
+        }
+        
+        return NextResponse.json(
+          { error: `API 错误: ${errorContent}` },
+          { status: 500 }
+        );
+      } catch (err) {
+        console.error('Error reading error file:', err);
+        throw new Error('Failed to read response or error file');
+      }
+    }
+    
+    console.log('Response content:', responseContent);
     
     let response;
     try {
       // 检查响应是否为空或无效
-      if (!responseJson || responseJson.trim() === '') {
+      if (!responseContent || responseContent.trim() === '') {
         throw new Error('Empty response from API');
       }
 
-      // 检查是否是错误消息
-      if (responseJson.startsWith('Request')) {
-        throw new Error(responseJson);
-      }
-
-      response = JSON.parse(responseJson);
+      response = JSON.parse(responseContent);
       console.log('Parsed response:', response);
       
       // 检查是否有错误响应
       if (response.error) {
         const errorMessage = response.error.message || 'API returned an error';
         if (errorMessage.includes('rate limit exceeded')) {
-          throw new Error('API rate limit exceeded. Please try again in a few minutes.');
+          return NextResponse.json(
+            { error: 'API 调用次数超限，请稍后再试' },
+            { status: 429 }
+          );
         }
         throw new Error(errorMessage);
       }
@@ -215,13 +268,10 @@ export async function POST(request: NextRequest) {
       }
     } catch (e) {
       console.error('Error parsing response:', e);
-      if (e.message.includes('rate limit exceeded')) {
-        return NextResponse.json(
-          { error: 'API rate limit exceeded. Please try again in a few minutes.' },
-          { status: 429 }
-        );
-      }
-      throw e;
+      return NextResponse.json(
+        { error: '处理视频时出错，请重试' },
+        { status: 500 }
+      );
     }
 
     // 清理临时文件
