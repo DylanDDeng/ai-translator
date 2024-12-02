@@ -5,15 +5,27 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
+export const runtime = 'nodejs';
+export const maxDuration = 300;
+export const preferredRegion = 'hkg1';
+
 const execAsync = promisify(exec);
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const BASE_URL = 'https://generativelanguage.googleapis.com';
 const IS_PRODUCTION = process.env.VERCEL_ENV === 'production';
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE || '50000000', 10); // 50MB
 
 export async function POST(request: NextRequest) {
   let tempDir = '';
   try {
+    const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
+    if (contentLength > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: 'File size exceeds 50MB limit' },
+        { status: 413 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     let prompt = formData.get('prompt') as string || '请用中文描述这个视频片段';

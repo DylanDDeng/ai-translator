@@ -21,11 +21,8 @@ const nextConfig = {
     config.externals = [...config.externals, 'sharp', 'onnxruntime-node'];
     return config;
   },
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb',
-    },
-    responseLimit: '50mb',
+  env: {
+    NEXT_PUBLIC_MAX_FILE_SIZE: '50000000', // 50MB in bytes
   }
 }
 
