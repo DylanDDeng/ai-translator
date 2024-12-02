@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import { FormData } from 'formdata-node';
-import { Blob } from 'buffer';
 
 export async function POST(req: Request) {
   try {
@@ -15,7 +13,7 @@ export async function POST(req: Request) {
     }
 
     // Create a new FormData instance for the Dify API
-    const difyFormData = new FormData();
+    const difyFormData = new globalThis.FormData();
     difyFormData.append('file', file);
     difyFormData.append('user', 'abc-123');
 
