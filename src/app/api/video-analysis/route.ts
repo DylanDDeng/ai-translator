@@ -9,6 +9,7 @@ const execAsync = promisify(exec);
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const BASE_URL = 'https://generativelanguage.googleapis.com';
 const IS_PRODUCTION = process.env.VERCEL_ENV === 'production';
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export async function POST(request: NextRequest) {
   let tempDir = '';
@@ -21,8 +22,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: 'File size exceeds 50MB limit' }, { status: 413 });
+    }
+
     if (!GOOGLE_API_KEY) {
       return NextResponse.json({ error: 'GOOGLE_API_KEY is not configured' }, { status: 500 });
+    }
+
+    // 检查文件类型
+    if (file.type !== 'video/mp4') {
+      return NextResponse.json({ error: 'Only MP4 videos are supported' }, { status: 400 });
     }
 
     // 处理 prompt 中的特殊字符
@@ -120,7 +130,7 @@ export async function POST(request: NextRequest) {
       // 验证请求配置文件
       'echo "验证请求配置..."',
       `cat ${requestConfigPath}`,
-      `if ! jq empty ${requestConfigPath}; then
+      `if ! jq empty ${requestConfigPath} 2>/dev/null; then
         echo "请求配置验证失败"
         exit 1
       fi`,
@@ -133,7 +143,7 @@ export async function POST(request: NextRequest) {
         --data-binary "@${requestConfigPath}" > ${path.join(tempDir, 'response.json')}`,
       
       'echo "API 响应："',
-      `if ! jq empty ${path.join(tempDir, 'response.json')}; then
+      `if ! jq empty ${path.join(tempDir, 'response.json')} 2>/dev/null; then
         echo "响应不是有效的 JSON"
         cat ${path.join(tempDir, 'response.json')}
         exit 1
@@ -141,7 +151,7 @@ export async function POST(request: NextRequest) {
       `cat ${path.join(tempDir, 'response.json')}`,
       
       'echo "结果："',
-      `jq -r ".candidates[].content.parts[].text" ${path.join(tempDir, 'response.json')} || cat ${path.join(tempDir, 'response.json')}`
+      `jq -r ".candidates[].content.parts[].text" ${path.join(tempDir, 'response.json')} 2>/dev/null || cat ${path.join(tempDir, 'response.json')}`
     ];
 
     // 执行命令
