@@ -2,7 +2,6 @@
 
 import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { uploadAndAnalyzeVideo } from '@/lib/googleApi';
 
 export default function VideoAnalysis() {
   const [isUploading, setIsUploading] = useState(false);
@@ -47,7 +46,27 @@ export default function VideoAnalysis() {
     setAnalysis(null);
 
     try {
-      const analysisText = await uploadAndAnalyzeVideo(selectedFile, prompt);
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('prompt', prompt);
+
+      const response = await fetch('/api/video-analysis', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to analyze video');
+      }
+
+      const data = await response.json();
+      const analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!analysisText) {
+        throw new Error('No analysis result received');
+      }
+
       setAnalysis(analysisText);
     } catch (error: any) {
       console.error('Error analyzing video:', error);
