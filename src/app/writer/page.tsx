@@ -29,6 +29,14 @@ export default function WordLearner() {
     };
   }>>([])
 
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageWords, setImageWords] = useState<Array<{
+    word: string;
+    box: { x: number; y: number; width: number; height: number };
+  }>>([]);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+
   const playAudio = async (url: string) => {
     try {
       console.log('Playing audio from URL:', url);
@@ -167,6 +175,120 @@ export default function WordLearner() {
           <p className="text-gray-600">
             Enter a word to get detailed analysis, examples, and memory tips.
           </p>
+        </div>
+
+        {/* Image Upload Section */}
+        <div className="relative p-6 rounded-xl bg-white/10 backdrop-blur-lg border border-white/20 shadow-xl">
+          <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-500 to-purple-500 text-transparent bg-clip-text">
+            Image Word Recognition
+          </h2>
+          <div className="flex flex-col items-center gap-4">
+            <label
+              className="w-full h-32 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 transition-colors"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith("image/")) {
+                  setImageFile(file);
+                  setImageUrl(URL.createObjectURL(file));
+                }
+              }}
+            >
+              <input
+                type="file"
+                className="hidden"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setImageFile(file);
+                    setImageUrl(URL.createObjectURL(file));
+                  }
+                }}
+              />
+              <div className="text-center">
+                <p className="text-sm text-gray-300">
+                  Drag and drop an image here, or click to select
+                </p>
+              </div>
+            </label>
+
+            {imageUrl && (
+              <div className="relative w-full max-w-2xl">
+                <img
+                  src={imageUrl}
+                  alt="Uploaded image"
+                  className="w-full rounded-lg"
+                />
+                {imageWords.map((word, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      position: "absolute",
+                      left: `${word.box.x * 100}%`,
+                      top: `${word.box.y * 100}%`,
+                      width: `${word.box.width * 100}%`,
+                      height: `${word.box.height * 100}%`,
+                    }}
+                    className="group relative cursor-pointer"
+                  >
+                    {/* 半透明遮罩 */}
+                    <div className="absolute inset-0 border border-blue-400/30 bg-blue-400/10 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                    
+                    {/* 标签 */}
+                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full bg-gradient-to-r from-blue-500/90 to-purple-500/90 backdrop-blur-md 
+                                  text-white text-sm font-medium shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-200 transform group-hover:-translate-y-1
+                                  whitespace-nowrap z-10">
+                      {word.word}
+                    </div>
+
+                    {/* 连接线 */}
+                    <div className="absolute -top-2 left-1/2 w-px h-2 bg-gradient-to-b from-blue-400/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                  </div>
+                ))}
+                <button
+                  className="mt-4 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                  onClick={async () => {
+                    if (!imageFile) return;
+                    setIsProcessingImage(true);
+                    try {
+                      const formData = new FormData();
+                      formData.append("image", imageFile);
+                      const response = await fetch("/api/image-words", {
+                        method: "POST",
+                        body: formData,
+                      });
+                      const data = await response.json();
+                      console.log('Response data:', data);
+                      
+                      if (data.error) {
+                        console.error('API Error:', data.error);
+                        alert(`Error: ${data.error}`);
+                        return;
+                      }
+                      
+                      if (data.words && Array.isArray(data.words)) {
+                        console.log('Setting words:', data.words);
+                        setImageWords(data.words);
+                      } else {
+                        console.error('Invalid words data:', data.words);
+                        alert('Invalid response format from API');
+                      }
+                    } catch (error) {
+                      console.error("Error processing image:", error);
+                      alert('Failed to process image');
+                    } finally {
+                      setIsProcessingImage(false);
+                    }
+                  }}
+                  disabled={isProcessingImage}
+                >
+                  {isProcessingImage ? "Processing..." : "Detect Words"}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Search Section */}

@@ -38,6 +38,14 @@ const aiTools = [
     path: '/writer'
   },
   {
+    id: 'extractor',
+    name: 'Web Extractor',
+    description: 'Extract and summarize content from any webpage using AI technology.',
+    icon: '🔍',
+    gradient: 'from-violet-500 via-purple-500 to-fuchsia-500',
+    path: '/extractor'
+  },
+  {
     id: 'assistant',
     name: 'AI Assistant',
     description: 'Your personal AI assistant for tasks, questions, and problem-solving.',
