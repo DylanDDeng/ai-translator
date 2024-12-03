@@ -32,9 +32,9 @@ export default function VideoAnalysis() {
       setSelectedFile(file);
       setCurrentFileName(file.name);
       setError('');
-      setUploadProgress('File selected and ready for upload');
       setVideoUrl(null);
       setAnalysis(null);
+      setUploadProgress('File selected and ready for upload');
     }
   };
 
@@ -44,35 +44,68 @@ export default function VideoAnalysis() {
       return;
     }
 
-    setIsAnalyzing(true);
+    setIsUploading(true);
     setError('');
     setAnalysis('');
     setVideoUrl(null);
     setUploadProgress('Starting upload...');
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('prompt', prompt || 'Please analyze this video and describe what you see.');
-
-      setUploadProgress('Uploading to server...');
-      const response = await fetch('/api/video-analysis', {
+      // 1. 获取上传 URL
+      setUploadProgress('Getting upload URL...');
+      const urlResponse = await fetch('/api/video-analysis/upload-url', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filename: selectedFile.name,
+          contentType: selectedFile.type,
+        }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `Server error: ${response.status}`);
+      if (!urlResponse.ok) {
+        throw new Error('Failed to get upload URL');
       }
 
-      setUploadProgress('Processing video...');
+      const { uploadUrl, filename } = await urlResponse.json();
+
+      // 2. 上传文件到 Google Cloud Storage
+      setUploadProgress('Uploading to storage...');
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': selectedFile.type,
+        },
+        body: selectedFile,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload file');
+      }
+
+      setUploadProgress('Upload complete! Analyzing video...');
+      setIsUploading(false);
+      setIsAnalyzing(true);
+
+      // 3. 分析视频
+      const analysisResponse = await fetch('/api/video-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filename,
+          prompt,
+        }),
+      });
+
+      if (!analysisResponse.ok) {
+        throw new Error('Failed to analyze video');
+      }
+
+      const data = await analysisResponse.json();
       
-      if (!data.analysis) {
-        throw new Error('No analysis result received from the server');
-      }
-
       setUploadProgress('Analysis complete!');
       setAnalysis(data.analysis);
       setVideoUrl(data.videoUrl);
@@ -81,6 +114,7 @@ export default function VideoAnalysis() {
       setError(error.message || 'Failed to analyze video');
       setUploadProgress('Upload failed');
     } finally {
+      setIsUploading(false);
       setIsAnalyzing(false);
     }
   };
@@ -155,10 +189,10 @@ export default function VideoAnalysis() {
             />
             <button
               onClick={handleAnalyze}
-              disabled={!selectedFile || isAnalyzing || !prompt.trim()}
+              disabled={!selectedFile || isUploading || isAnalyzing || !prompt.trim()}
               className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isAnalyzing ? 'Analyzing...' : 'Analyze Video'}
+              {isAnalyzing ? 'Analyzing...' : isUploading ? 'Uploading...' : 'Analyze Video'}
             </button>
           </div>
         </div>

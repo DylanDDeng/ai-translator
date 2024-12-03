@@ -23,64 +23,25 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
-    const file = formData.get('file') as File;
-    const prompt = formData.get('prompt') as string || 'Please analyze this video and describe what you see.';
+    const { filename, prompt } = await req.json();
 
-    if (!file) {
+    if (!filename) {
       return NextResponse.json(
-        { error: 'No file provided' },
+        { error: 'No filename provided' },
         { status: 400 }
       );
     }
-
-    // 验证文件类型和大小
-    if (!file.type.startsWith('video/')) {
-      return NextResponse.json(
-        { error: 'Invalid file type. Please upload a video file.' },
-        { status: 400 }
-      );
-    }
-
-    const maxSize = 100 * 1024 * 1024; // 100MB
-    if (file.size > maxSize) {
-      return NextResponse.json(
-        { error: 'File too large. Maximum size is 100MB.' },
-        { status: 400 }
-      );
-    }
-
-    // 生成唯一文件名
-    const timestamp = Date.now();
-    const randomString = Math.random().toString(36).substring(7);
-    const filename = `videos/${timestamp}-${randomString}-${file.name}`;
 
     try {
-      // 获取上传 URL
-      const uploadUrl = await generateUploadSignedUrl(filename, file.type);
-
-      // 上传文件
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type,
-        },
-        body: file,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload to Google Cloud Storage');
-      }
-
       // 获取视频的访问 URL
       const videoUrl = await generateReadSignedUrl(filename);
 
       // 调用 Gemini API 分析视频
       const result = await model.generateContent([
-        prompt,
+        prompt || 'Please analyze this video and describe what you see.',
         {
           inlineData: {
-            mimeType: file.type,
+            mimeType: 'video/mp4',
             data: videoUrl
           }
         }
