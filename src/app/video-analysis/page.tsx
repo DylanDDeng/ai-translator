@@ -50,19 +50,19 @@ export default function VideoAnalysis() {
       formData.append('file', selectedFile);
       formData.append('prompt', prompt);
 
+      console.log('Uploading video:', selectedFile.name);
       const response = await fetch('/api/video-analysis', {
         method: 'POST',
         body: formData,
       });
 
+      const data = await response.json();
+      
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || 'Failed to analyze video');
       }
 
-      const data = await response.json();
       const analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
       if (!analysisText) {
         throw new Error('No analysis result received');
       }
