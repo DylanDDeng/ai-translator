@@ -15,17 +15,16 @@ const nextConfig = {
   },
   experimental: {
     serverActions: true,
-    serverComponentsExternalPackages: ['sharp', 'onnxruntime-node'],
   },
   webpack: (config) => {
-    config.externals = [...config.externals, 'sharp', 'onnxruntime-node'];
+    config.externals = [...config.externals, 'canvas', 'jsdom'];
     return config;
   },
   api: {
     bodyParser: {
-      sizeLimit: '50mb',
+      sizeLimit: '100mb',
     },
-    responseLimit: '50mb',
+    responseLimit: '100mb',
   }
 }
 

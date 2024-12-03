@@ -17,6 +17,10 @@ export default function VideoAnalysis() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    console.log('Selected file:', { name: file.name, type: file.type, size: file.size });
+    setSelectedFile(file);
+    setError('');
+
     // Validate file type and size
     if (!file.type.startsWith('video/')) {
       setError('Please upload a valid video file');
@@ -31,45 +35,55 @@ export default function VideoAnalysis() {
 
     setError(null);
     setAnalysis(null);
-    setSelectedFile(file);
     setCurrentFileName(file.name);
   };
 
   const handleAnalyze = async () => {
     if (!selectedFile) {
-      setError('Please upload a video first');
+      setError('Please select a video file first');
       return;
     }
 
     setIsAnalyzing(true);
-    setError(null);
-    setAnalysis(null);
+    setError('');
+    setAnalysis('');
 
     try {
+      console.log('Starting video analysis...');
       const formData = new FormData();
       formData.append('file', selectedFile);
-      formData.append('prompt', prompt);
+      formData.append('prompt', prompt || 'Please analyze this video and describe what you see.');
 
-      console.log('Uploading video:', selectedFile.name);
+      console.log('Sending request to API...');
       const response = await fetch('/api/video-analysis', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
-      
+      console.log('Response status:', response.status);
+      const responseText = await response.text();
+      console.log('Raw response:', responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error('Failed to parse response as JSON:', e);
+        throw new Error('Server returned invalid JSON response');
+      }
+
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to analyze video');
+        throw new Error(data.error || `Server error: ${response.status}`);
       }
 
       const analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!analysisText) {
-        throw new Error('No analysis result received');
+        throw new Error('No analysis result received from the server');
       }
 
       setAnalysis(analysisText);
     } catch (error: any) {
-      console.error('Error analyzing video:', error);
+      console.error('Error in video analysis:', error);
       setError(error.message || 'Failed to analyze video');
     } finally {
       setIsAnalyzing(false);
