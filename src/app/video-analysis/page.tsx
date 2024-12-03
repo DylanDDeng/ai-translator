@@ -9,6 +9,7 @@ export default function VideoAnalysis() {
   const [currentFileName, setCurrentFileName] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('请用中文描述这个视频片段');
   const [uploadProgress, setUploadProgress] = useState<string>('');
@@ -28,16 +29,12 @@ export default function VideoAnalysis() {
         return;
       }
 
-      console.log('Selected file:', {
-        name: file.name,
-        type: file.type,
-        size: `${(file.size / (1024 * 1024)).toFixed(2)}MB`
-      });
-
       setSelectedFile(file);
       setCurrentFileName(file.name);
       setError('');
       setUploadProgress('File selected and ready for upload');
+      setVideoUrl(null);
+      setAnalysis(null);
     }
   };
 
@@ -50,71 +47,35 @@ export default function VideoAnalysis() {
     setIsAnalyzing(true);
     setError('');
     setAnalysis('');
+    setVideoUrl(null);
     setUploadProgress('Starting upload...');
 
     try {
-      console.log('Starting video analysis...');
-      
-      // 创建预签名 URL 的请求
-      const presignResponse = await fetch('/api/video-analysis/presign', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename: selectedFile.name,
-          contentType: selectedFile.type,
-        }),
-      });
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('prompt', prompt || 'Please analyze this video and describe what you see.');
 
-      if (!presignResponse.ok) {
-        throw new Error('Failed to get upload URL');
-      }
-
-      const { uploadUrl, blobUrl } = await presignResponse.json();
-
-      // 上传文件到 Vercel Blob
       setUploadProgress('Uploading to server...');
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': selectedFile.type,
-        },
-        body: selectedFile,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file');
-      }
-
-      // 分析视频
-      setUploadProgress('Analyzing video...');
-      const analysisResponse = await fetch('/api/video-analysis/analyze', {
+      const response = await fetch('/api/video-analysis', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          blobUrl,
-          prompt: prompt || 'Please analyze this video and describe what you see.',
-        }),
+        body: formData,
       });
 
-      if (!analysisResponse.ok) {
-        const errorText = await analysisResponse.text();
-        console.error('Analysis error:', errorText);
-        throw new Error(`Failed to analyze video: ${errorText}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `Server error: ${response.status}`);
       }
 
-      const data = await analysisResponse.json();
-      const analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      setUploadProgress('Processing video...');
       
-      if (!analysisText) {
-        throw new Error('No analysis result received');
+      if (!data.analysis) {
+        throw new Error('No analysis result received from the server');
       }
 
       setUploadProgress('Analysis complete!');
-      setAnalysis(analysisText);
+      setAnalysis(data.analysis);
+      setVideoUrl(data.videoUrl);
     } catch (error: any) {
       console.error('Error in video analysis:', error);
       setError(error.message || 'Failed to analyze video');
@@ -222,16 +183,33 @@ export default function VideoAnalysis() {
               <p className="text-sm text-gray-500 mt-2">This may take a few minutes</p>
             </div>
           </div>
-        ) : analysis && (
+        ) : (analysis || videoUrl) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-white/70 backdrop-blur-sm rounded-lg p-6"
           >
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Analysis Result</h2>
-            <div className="prose max-w-none">
-              <p className="text-gray-700 whitespace-pre-wrap">{analysis}</p>
-            </div>
+            
+            {/* Video Preview */}
+            {videoUrl && (
+              <div className="mb-6">
+                <video
+                  controls
+                  className="w-full rounded-lg shadow-lg"
+                  src={videoUrl}
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            )}
+            
+            {/* Analysis Text */}
+            {analysis && (
+              <div className="prose max-w-none">
+                <p className="text-gray-700 whitespace-pre-wrap">{analysis}</p>
+              </div>
+            )}
           </motion.div>
         )}
       </div>

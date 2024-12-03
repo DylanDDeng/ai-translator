@@ -1,8 +1,13 @@
-import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
+import { generateUploadSignedUrl, generateReadSignedUrl } from '@/lib/gcs';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export const runtime = 'edge';
 export const maxDuration = 300;
+
+// 初始化 Google AI
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
 // Handle OPTIONS requests for CORS
 export async function OPTIONS() {
@@ -19,168 +24,89 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   try {
-    console.log('Starting video analysis request');
-    
-    // 验证环境变量
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      console.error('BLOB_READ_WRITE_TOKEN is not set');
-      return new NextResponse(
-        JSON.stringify({ error: 'Server configuration error: BLOB_READ_WRITE_TOKEN missing' }),
-        { 
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
-      );
-    }
-
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    const prompt = formData.get('prompt') as string;
+    const prompt = formData.get('prompt') as string || 'Please analyze this video and describe what you see.';
 
     if (!file) {
-      console.error('No file provided');
-      return new NextResponse(
-        JSON.stringify({ error: 'No file provided' }),
-        { 
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
+      return NextResponse.json(
+        { error: 'No file provided' },
+        { status: 400 }
       );
     }
 
     // 验证文件类型和大小
-    console.log('File details:', {
-      name: file.name,
-      type: file.type,
-      size: file.size
-    });
-
     if (!file.type.startsWith('video/')) {
-      console.error('Invalid file type:', file.type);
-      return new NextResponse(
-        JSON.stringify({ error: 'Invalid file type. Please upload a video file.' }),
-        { 
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
+      return NextResponse.json(
+        { error: 'Invalid file type. Please upload a video file.' },
+        { status: 400 }
       );
     }
 
-    if (file.size > 100 * 1024 * 1024) { // 100MB
-      console.error('File too large:', file.size);
-      return new NextResponse(
-        JSON.stringify({ error: 'File too large. Maximum size is 100MB.' }),
-        { 
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
+    const maxSize = 100 * 1024 * 1024; // 100MB
+    if (file.size > maxSize) {
+      return NextResponse.json(
+        { error: 'File too large. Maximum size is 100MB.' },
+        { status: 400 }
       );
     }
 
-    // Upload to Vercel Blob
-    console.log('Uploading to Vercel Blob...');
+    // 生成唯一文件名
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(7);
+    const filename = `videos/${timestamp}-${randomString}-${file.name}`;
+
     try {
-      const blob = await put(file.name, file, {
-        access: 'public',
-        addRandomSuffix: true,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
+      // 获取上传 URL
+      const uploadUrl = await generateUploadSignedUrl(filename, file.type);
+
+      // 上传文件
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type,
+        },
+        body: file,
       });
 
-      if (!blob || !blob.url) {
-        throw new Error('Failed to get blob URL');
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload to Google Cloud Storage');
       }
 
-      console.log('Upload successful, blob URL:', blob.url);
+      // 获取视频的访问 URL
+      const videoUrl = await generateReadSignedUrl(filename);
 
-      // Call Google API with the video URL
-      console.log('Calling Google API...');
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GOOGLE_API_KEY}`,
+      // 调用 Gemini API 分析视频
+      const result = await model.generateContent([
+        prompt,
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: prompt || 'Please analyze this video and describe what you see.' },
-                { file_data: { mime_type: file.type, file_uri: blob.url } }
-              ]
-            }]
-          })
-        }
-      );
-
-      const responseText = await response.text();
-      console.log('Google API response:', responseText);
-
-      if (!response.ok) {
-        return new NextResponse(
-          JSON.stringify({ error: `Failed to analyze video: ${responseText}` }),
-          { 
-            status: response.status,
-            headers: {
-              'Content-Type': 'application/json',
-            }
-          }
-        );
-      }
-
-      try {
-        const data = JSON.parse(responseText);
-        console.log('Analysis successful');
-        return new NextResponse(
-          JSON.stringify(data),
-          { 
-            status: 200,
-            headers: {
-              'Content-Type': 'application/json',
-            }
-          }
-        );
-      } catch (parseError) {
-        console.error('Failed to parse Google API response:', parseError);
-        return new NextResponse(
-          JSON.stringify({ error: 'Invalid response from analysis service' }),
-          { 
-            status: 500,
-            headers: {
-              'Content-Type': 'application/json',
-            }
-          }
-        );
-      }
-    } catch (uploadError: any) {
-      console.error('Blob upload error:', uploadError);
-      return new NextResponse(
-        JSON.stringify({ error: `Failed to upload video: ${uploadError.message}` }),
-        { 
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
+          inlineData: {
+            mimeType: file.type,
+            data: videoUrl
           }
         }
+      ]);
+
+      const response = await result.response;
+      const text = response.text();
+
+      return NextResponse.json({
+        analysis: text,
+        videoUrl: videoUrl
+      });
+
+    } catch (error: any) {
+      console.error('Error processing video:', error);
+      return NextResponse.json(
+        { error: `Failed to process video: ${error.message}` },
+        { status: 500 }
       );
     }
   } catch (error: any) {
     console.error('General error:', error);
-    return new NextResponse(
-      JSON.stringify({ error: error.message || 'Internal server error' }),
-      { 
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      }
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
     );
   }
 }

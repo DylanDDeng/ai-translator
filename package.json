@@ -11,7 +11,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@auth/prisma-adapter": "^2.7.4",
+    "@aws-sdk/client-s3": "^3.703.0",
+    "@aws-sdk/s3-presigned-post": "^3.703.0",
     "@codesandbox/sandpack-react": "^2.19.10",
+    "@google-cloud/storage": "^7.14.0",
     "@google/generative-ai": "^0.21.0",
     "@notionhq/client": "^2.2.15",
     "@prisma/client": "^5.22.0",
