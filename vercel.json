@@ -2,7 +2,8 @@
   "version": 2,
   "functions": {
     "src/app/api/**/*": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "memory": 3008
     }
   },
   "regions": ["hkg1"],
@@ -20,7 +21,7 @@
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "X-Requested-With, Content-Type, Accept"
+          "value": "X-Requested-With, Content-Type, Accept, Authorization"
         },
         {
           "key": "Access-Control-Max-Age",

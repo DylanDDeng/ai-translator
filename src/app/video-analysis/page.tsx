@@ -54,37 +54,63 @@ export default function VideoAnalysis() {
 
     try {
       console.log('Starting video analysis...');
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('prompt', prompt || 'Please analyze this video and describe what you see.');
-
-      setUploadProgress('Uploading to server...');
-      console.log('Sending request to API...');
-      const response = await fetch('/api/video-analysis', {
+      
+      // 创建预签名 URL 的请求
+      const presignResponse = await fetch('/api/video-analysis/presign', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filename: selectedFile.name,
+          contentType: selectedFile.type,
+        }),
       });
 
-      console.log('Response status:', response.status);
-      const responseText = await response.text();
-      console.log('Raw response:', responseText);
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (e) {
-        console.error('Failed to parse response as JSON:', e);
-        throw new Error('Server returned invalid JSON response');
+      if (!presignResponse.ok) {
+        throw new Error('Failed to get upload URL');
       }
 
-      if (!response.ok) {
-        throw new Error(data.error || `Server error: ${response.status}`);
+      const { uploadUrl, blobUrl } = await presignResponse.json();
+
+      // 上传文件到 Vercel Blob
+      setUploadProgress('Uploading to server...');
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': selectedFile.type,
+        },
+        body: selectedFile,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload file');
       }
 
-      setUploadProgress('Processing video...');
+      // 分析视频
+      setUploadProgress('Analyzing video...');
+      const analysisResponse = await fetch('/api/video-analysis/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          blobUrl,
+          prompt: prompt || 'Please analyze this video and describe what you see.',
+        }),
+      });
+
+      if (!analysisResponse.ok) {
+        const errorText = await analysisResponse.text();
+        console.error('Analysis error:', errorText);
+        throw new Error(`Failed to analyze video: ${errorText}`);
+      }
+
+      const data = await analysisResponse.json();
       const analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
       if (!analysisText) {
-        throw new Error('No analysis result received from the server');
+        throw new Error('No analysis result received');
       }
 
       setUploadProgress('Analysis complete!');
