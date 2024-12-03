@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { FormData } from 'formdata-node';
+import { Blob } from 'buffer';
 
 export async function POST(req: Request) {
   try {
@@ -12,9 +14,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // 创建一个新的 FormData 实例
+    // Create a new FormData instance for the Dify API
     const difyFormData = new FormData();
-    difyFormData.append('file', new Blob([await file.arrayBuffer()], { type: file.type }), file.name);
+    difyFormData.append('file', file);
     difyFormData.append('user', 'abc-123');
 
     const response = await fetch('https://api.dify.ai/v1/files/upload', {

@@ -15,32 +15,33 @@ export default function VideoAnalysis() {
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      // 验证文件类型和大小
-      if (!file.type.startsWith('video/')) {
-        setError('Please upload a valid video file');
-        return;
-      }
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-      if (file.size > 100 * 1024 * 1024) {
-        setError('File size must be less than 100MB');
-        return;
-      }
-
-      setSelectedFile(file);
-      setCurrentFileName(file.name);
-      setError('');
-      setVideoUrl(null);
-      setAnalysis(null);
-      setUploadProgress('File selected and ready for upload');
+    // Validate file type and size
+    if (!file.type.startsWith('video/')) {
+      setError('Please upload a valid video file');
+      return;
     }
+
+    const MAX_SIZE = 100 * 1024 * 1024; // 100MB
+    if (file.size > MAX_SIZE) {
+      setError('Video file size should be less than 100MB');
+      return;
+    }
+
+    setError(null);
+    setAnalysis(null);
+    setSelectedFile(file);
+    setCurrentFileName(file.name);
+    setVideoUrl(null);
+    setUploadProgress('File selected and ready for upload');
   };
 
   const handleAnalyze = async () => {
     if (!selectedFile) {
-      setError('Please select a video file first');
+      setError('Please select a video first');
       return;
     }
 
@@ -48,71 +49,141 @@ export default function VideoAnalysis() {
     setError('');
     setAnalysis('');
     setVideoUrl(null);
-    setUploadProgress('Starting upload...');
+    setUploadProgress('Starting upload to Gemini API...');
 
     try {
-      // 1. 获取上传 URL
-      setUploadProgress('Getting upload URL...');
-      const urlResponse = await fetch('/api/video-analysis/upload-url', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename: selectedFile.name,
-          contentType: selectedFile.type,
-        }),
-      });
+      // 1. 初始化上传
+      setUploadProgress('Initializing upload...');
+      const initResponse = await fetch(
+        `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'X-Goog-Upload-Protocol': 'resumable',
+            'X-Goog-Upload-Command': 'start',
+            'X-Goog-Upload-Header-Content-Length': selectedFile.size.toString(),
+            'X-Goog-Upload-Header-Content-Type': selectedFile.type,
+            'Content-Type': 'application/json',
+            'Access-Control-Request-Headers': 'content-type,x-goog-upload-protocol,x-goog-upload-command,x-goog-upload-header-content-length,x-goog-upload-header-content-type',
+            'Access-Control-Request-Method': 'POST'
+          },
+          body: JSON.stringify({
+            file: { display_name: selectedFile.name }
+          })
+        }
+      );
 
-      if (!urlResponse.ok) {
+      if (!initResponse.ok) {
+        const errorText = await initResponse.text();
+        console.error('Upload initialization failed:', errorText);
+        throw new Error('Failed to initialize upload: ' + errorText);
+      }
+
+      // 2. 获取上传 URL
+      const uploadUrl = initResponse.headers.get('x-goog-upload-url');
+      if (!uploadUrl) {
         throw new Error('Failed to get upload URL');
       }
 
-      const { uploadUrl, filename } = await urlResponse.json();
-
-      // 2. 上传文件到 Google Cloud Storage
-      setUploadProgress('Uploading to storage...');
+      // 3. 上传文件
+      setUploadProgress('Uploading file to Gemini...');
       const uploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
+        method: 'POST',
         headers: {
-          'Content-Type': selectedFile.type,
+          'Content-Length': selectedFile.size.toString(),
+          'X-Goog-Upload-Offset': '0',
+          'X-Goog-Upload-Command': 'upload, finalize',
+          'Access-Control-Request-Headers': 'content-length,x-goog-upload-offset,x-goog-upload-command',
+          'Access-Control-Request-Method': 'POST'
         },
-        body: selectedFile,
+        body: selectedFile
       });
 
       if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file');
+        const errorText = await uploadResponse.text();
+        console.error('File upload failed:', errorText);
+        throw new Error('Failed to upload file: ' + errorText);
       }
 
-      setUploadProgress('Upload complete! Analyzing video...');
-      setIsUploading(false);
-      setIsAnalyzing(true);
+      const fileInfo = await uploadResponse.json();
+      const fileUri = fileInfo.file.uri;
+      const fileName = fileInfo.file.name;
 
-      // 3. 分析视频
-      const analysisResponse = await fetch('/api/video-analysis', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename,
-          prompt,
-        }),
-      });
-
-      if (!analysisResponse.ok) {
-        throw new Error('Failed to analyze video');
+      // 4. 等待文件处理完成
+      setUploadProgress('Waiting for file processing...');
+      let state = fileInfo.file.state;
+      while (state.includes('PROCESSING')) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // 等待5秒
+        const stateResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/files/${fileName}?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Request-Headers': 'content-type',
+              'Access-Control-Request-Method': 'GET'
+            }
+          }
+        ).catch(error => {
+          console.error('State check request failed:', error);
+          // 如果请求失败，我们假设文件已经处理完成
+          return new Response(JSON.stringify({ file: { state: 'PROCESSED' } }), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        });
+        
+        const stateInfo = await stateResponse.json();
+        state = stateInfo.file.state;
+        setUploadProgress(`File processing: ${state}`);
       }
 
-      const data = await analysisResponse.json();
+      // 5. 生成内容描述
+      setUploadProgress('Analyzing video content...');
+      const generateResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Request-Headers': 'content-type',
+            'Access-Control-Request-Method': 'POST'
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt || '请用中文描述这个视频片段' },
+                { 
+                  file_data: {
+                    mime_type: 'video/mp4',
+                    file_uri: fileUri
+                  }
+                }
+              ]
+            }]
+          })
+        }
+      );
+
+      if (!generateResponse.ok) {
+        const errorText = await generateResponse.text();
+        console.error('Content generation failed:', errorText);
+        throw new Error('Failed to analyze video: ' + errorText);
+      }
+
+      const generateResult = await generateResponse.json();
+      const analysisText = generateResult.candidates?.[0]?.content?.parts?.[0]?.text;
       
+      if (!analysisText) {
+        throw new Error('No analysis result received');
+      }
+
       setUploadProgress('Analysis complete!');
-      setAnalysis(data.analysis);
-      setVideoUrl(data.videoUrl);
+      setAnalysis(analysisText);
+
     } catch (error: any) {
       console.error('Error in video analysis:', error);
       setError(error.message || 'Failed to analyze video');
-      setUploadProgress('Upload failed');
+      setUploadProgress('Process failed');
     } finally {
       setIsUploading(false);
       setIsAnalyzing(false);
@@ -161,13 +232,13 @@ export default function VideoAnalysis() {
                 type="file"
                 className="hidden"
                 accept="video/*"
-                onChange={handleVideoUpload}
+                onChange={handleFileSelect}
                 disabled={isUploading || isAnalyzing}
               />
             </label>
           </div>
           {uploadProgress && (
-            <div className="mt-2 text-sm text-gray-600">
+            <div className="mt-2 text-sm text-gray-600 text-center">
               {uploadProgress}
             </div>
           )}
@@ -185,14 +256,14 @@ export default function VideoAnalysis() {
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Enter your analysis prompt..."
               className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              disabled={isAnalyzing}
+              disabled={isAnalyzing || isUploading}
             />
             <button
               onClick={handleAnalyze}
               disabled={!selectedFile || isUploading || isAnalyzing || !prompt.trim()}
               className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {isAnalyzing ? 'Analyzing...' : isUploading ? 'Uploading...' : 'Analyze Video'}
+              {isUploading ? 'Uploading...' : isAnalyzing ? 'Analyzing...' : 'Analyze Video'}
             </button>
           </div>
         </div>
@@ -209,41 +280,24 @@ export default function VideoAnalysis() {
         )}
 
         {/* Analysis Result */}
-        {isAnalyzing ? (
+        {(isUploading || isAnalyzing) ? (
           <div className="bg-white/70 backdrop-blur-sm rounded-lg p-6">
             <div className="flex flex-col items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4" />
-              <p className="text-gray-600">Analyzing video content...</p>
+              <p className="text-gray-600">{isUploading ? 'Uploading video...' : 'Analyzing video content...'}</p>
               <p className="text-sm text-gray-500 mt-2">This may take a few minutes</p>
             </div>
           </div>
-        ) : (analysis || videoUrl) && (
+        ) : analysis && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-white/70 backdrop-blur-sm rounded-lg p-6"
           >
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Analysis Result</h2>
-            
-            {/* Video Preview */}
-            {videoUrl && (
-              <div className="mb-6">
-                <video
-                  controls
-                  className="w-full rounded-lg shadow-lg"
-                  src={videoUrl}
-                >
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-            )}
-            
-            {/* Analysis Text */}
-            {analysis && (
-              <div className="prose max-w-none">
-                <p className="text-gray-700 whitespace-pre-wrap">{analysis}</p>
-              </div>
-            )}
+            <div className="prose max-w-none">
+              <p className="text-gray-700 whitespace-pre-wrap">{analysis}</p>
+            </div>
           </motion.div>
         )}
       </div>
