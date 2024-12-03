@@ -8,6 +8,15 @@ export async function POST(req: Request) {
   try {
     console.log('Starting video analysis request');
     
+    // 验证环境变量
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      console.error('BLOB_READ_WRITE_TOKEN is not set');
+      return NextResponse.json(
+        { error: 'Server configuration error: BLOB_READ_WRITE_TOKEN missing' },
+        { status: 500 }
+      );
+    }
+
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const prompt = formData.get('prompt') as string;
@@ -20,11 +29,28 @@ export async function POST(req: Request) {
       );
     }
 
+    // 验证文件类型和大小
     console.log('File details:', {
       name: file.name,
       type: file.type,
       size: file.size
     });
+
+    if (!file.type.startsWith('video/')) {
+      console.error('Invalid file type:', file.type);
+      return NextResponse.json(
+        { error: 'Invalid file type. Please upload a video file.' },
+        { status: 400 }
+      );
+    }
+
+    if (file.size > 100 * 1024 * 1024) { // 100MB
+      console.error('File too large:', file.size);
+      return NextResponse.json(
+        { error: 'File too large. Maximum size is 100MB.' },
+        { status: 400 }
+      );
+    }
 
     // Upload to Vercel Blob
     console.log('Uploading to Vercel Blob...');
@@ -32,8 +58,14 @@ export async function POST(req: Request) {
       const { url } = await put(file.name, file, {
         access: 'public',
         addRandomSuffix: true,
+        token: process.env.BLOB_READ_WRITE_TOKEN,
       });
       console.log('Upload successful, blob URL:', url);
+
+      // 验证上传的 URL
+      if (!url || !url.startsWith('https://')) {
+        throw new Error('Invalid blob URL received');
+      }
 
       // Call Google API with the video URL
       console.log('Calling Google API...');
@@ -47,7 +79,7 @@ export async function POST(req: Request) {
           body: JSON.stringify({
             contents: [{
               parts: [
-                { text: prompt },
+                { text: prompt || 'Please analyze this video and describe what you see.' },
                 { file_data: { mime_type: file.type, file_uri: url } }
               ]
             }]

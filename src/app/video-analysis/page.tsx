@@ -11,31 +11,34 @@ export default function VideoAnalysis() {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('请用中文描述这个视频片段');
+  const [uploadProgress, setUploadProgress] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // 验证文件类型和大小
+      if (!file.type.startsWith('video/')) {
+        setError('Please upload a valid video file');
+        return;
+      }
 
-    console.log('Selected file:', { name: file.name, type: file.type, size: file.size });
-    setSelectedFile(file);
-    setError('');
+      if (file.size > 100 * 1024 * 1024) {
+        setError('File size must be less than 100MB');
+        return;
+      }
 
-    // Validate file type and size
-    if (!file.type.startsWith('video/')) {
-      setError('Please upload a valid video file');
-      return;
+      console.log('Selected file:', {
+        name: file.name,
+        type: file.type,
+        size: `${(file.size / (1024 * 1024)).toFixed(2)}MB`
+      });
+
+      setSelectedFile(file);
+      setCurrentFileName(file.name);
+      setError('');
+      setUploadProgress('File selected and ready for upload');
     }
-
-    const MAX_SIZE = 100 * 1024 * 1024; // 100MB
-    if (file.size > MAX_SIZE) {
-      setError('Video file size should be less than 100MB');
-      return;
-    }
-
-    setError(null);
-    setAnalysis(null);
-    setCurrentFileName(file.name);
   };
 
   const handleAnalyze = async () => {
@@ -47,6 +50,7 @@ export default function VideoAnalysis() {
     setIsAnalyzing(true);
     setError('');
     setAnalysis('');
+    setUploadProgress('Starting upload...');
 
     try {
       console.log('Starting video analysis...');
@@ -54,6 +58,7 @@ export default function VideoAnalysis() {
       formData.append('file', selectedFile);
       formData.append('prompt', prompt || 'Please analyze this video and describe what you see.');
 
+      setUploadProgress('Uploading to server...');
       console.log('Sending request to API...');
       const response = await fetch('/api/video-analysis', {
         method: 'POST',
@@ -76,15 +81,18 @@ export default function VideoAnalysis() {
         throw new Error(data.error || `Server error: ${response.status}`);
       }
 
+      setUploadProgress('Processing video...');
       const analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!analysisText) {
         throw new Error('No analysis result received from the server');
       }
 
+      setUploadProgress('Analysis complete!');
       setAnalysis(analysisText);
     } catch (error: any) {
       console.error('Error in video analysis:', error);
       setError(error.message || 'Failed to analyze video');
+      setUploadProgress('Upload failed');
     } finally {
       setIsAnalyzing(false);
     }
@@ -132,11 +140,16 @@ export default function VideoAnalysis() {
                 type="file"
                 className="hidden"
                 accept="video/*"
-                onChange={handleFileSelect}
+                onChange={handleVideoUpload}
                 disabled={isUploading || isAnalyzing}
               />
             </label>
           </div>
+          {uploadProgress && (
+            <div className="mt-2 text-sm text-gray-600">
+              {uploadProgress}
+            </div>
+          )}
         </div>
 
         {/* Prompt Input */}
